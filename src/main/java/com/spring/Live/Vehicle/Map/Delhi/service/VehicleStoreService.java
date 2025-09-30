@@ -12,8 +12,8 @@ import org.slf4j.Logger;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 
 @Service
@@ -25,6 +25,7 @@ public class VehicleStoreService {
 
 
     private static final String KEY_PREFIX = "vehicle:latest:";
+    private static final long VEHICLE_TTL_MINUTES = 5;
 
 
     public VehicleStoreService(RedisTemplate<String, String> redisTemplate) {
@@ -34,9 +35,16 @@ public class VehicleStoreService {
 
     public void save(VehicleDto v) {
         try {
-            String key = KEY_PREFIX + (v.getVehicleId() == null ? v.getTripId() : v.getVehicleId());
+            String id = v.getVehicleId() != null ? v.getVehicleId() : v.getTripId();
+            if (id == null || id.isBlank()) {
+                log.warn("Skipping vehicle save due to missing ID.");
+                return;
+            }
+
+            String key = KEY_PREFIX + id;
             String json = mapper.writeValueAsString(v);
             redisTemplate.opsForValue().set(key, json);
+            redisTemplate.expire(key, VEHICLE_TTL_MINUTES, TimeUnit.MINUTES);
             redisTemplate.opsForValue().set("vehicle:lastFeedTs", String.valueOf(Instant.now().getEpochSecond()));
         } catch (JsonProcessingException e) {
             log.error("Failed to serialize vehicle", e);
@@ -46,13 +54,12 @@ public class VehicleStoreService {
 
     public List<VehicleDto> getAll() {
         try {
-            Map<Object, Object> entries = redisTemplate.opsForValue().multiGet(redisTemplate.keys(KEY_PREFIX + "*"))
-                    .stream()
-                    .filter(x -> x != null)
-                    .collect(Collectors.toMap(k -> k.toString(), v -> v));
             List<VehicleDto> out = new ArrayList<>();
-            for (String key : redisTemplate.keys(KEY_PREFIX + "*")) {
-                String json = redisTemplate.opsForValue().get((String) key);
+            Set<String> keys = redisTemplate.keys(KEY_PREFIX + "*");
+            log.info("API request for all vehicles. Found {} keys in Redis.", keys.size());
+
+            for (String key : keys) {
+                String json = redisTemplate.opsForValue().get(key);
                 if (json == null) continue;
                 VehicleDto dto = mapper.readValue(json, VehicleDto.class);
                 out.add(dto);
@@ -71,3 +78,4 @@ public class VehicleStoreService {
         try { return Long.parseLong(s); } catch (NumberFormatException ex) { return null; }
     }
 }
+

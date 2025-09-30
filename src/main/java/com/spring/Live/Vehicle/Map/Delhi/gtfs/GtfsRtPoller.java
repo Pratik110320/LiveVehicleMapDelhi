@@ -3,6 +3,7 @@ package com.spring.Live.Vehicle.Map.Delhi.gtfs;
 
 import com.google.transit.realtime.GtfsRealtime;
 import com.spring.Live.Vehicle.Map.Delhi.model.VehicleDto;
+import com.spring.Live.Vehicle.Map.Delhi.service.GtfsStaticService;
 import com.spring.Live.Vehicle.Map.Delhi.service.VehicleStoreService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,48 +21,72 @@ import java.time.Instant;
 @EnableScheduling
 public class GtfsRtPoller {
     private final Logger log = LoggerFactory.getLogger(GtfsRtPoller.class);
-    private final WebClient webClient = WebClient.create();
     private final VehicleStoreService store;
-
+    private final WebClient webClient;
+    private final GtfsStaticService staticService; // Service to access static data
 
     @Value("${otd.realtime.url}")
     private String feedUrl;
 
-
-    public GtfsRtPoller(VehicleStoreService store) {
+    public GtfsRtPoller(VehicleStoreService store, WebClient webClient, GtfsStaticService staticService) {
         this.store = store;
+        this.webClient = webClient;
+        this.staticService = staticService;
     }
 
-
-    @Scheduled(fixedDelayString = "${otd.poll.ms:10000}")
+    @Scheduled(fixedDelayString = "${otd.realtime.poll.ms}")
     public void poll() {
+        log.info("Polling GTFS-RT feed...");
         try {
             byte[] data = webClient.get()
                     .uri(feedUrl)
                     .retrieve()
                     .bodyToMono(byte[].class)
                     .block();
-            if (data == null) {
-                log.warn("Empty feed bytes");
+
+            if (data == null || data.length == 0) {
+                log.warn("Empty feed bytes received from API");
                 return;
             }
+
             GtfsRealtime.FeedMessage feed = GtfsRealtime.FeedMessage.parseFrom(data);
+            log.info("Feed parsed successfully. Found {} entities.", feed.getEntityCount());
+            int vehicleCount = 0;
+
             for (GtfsRealtime.FeedEntity entity : feed.getEntityList()) {
                 if (entity.hasVehicle()) {
+                    vehicleCount++;
                     GtfsRealtime.VehiclePosition vp = entity.getVehicle();
                     VehicleDto v = new VehicleDto();
                     String vehicleId = vp.hasVehicle() && vp.getVehicle().hasId() ? vp.getVehicle().getId() : null;
                     v.setVehicleId(vehicleId);
                     v.setTripId(vp.hasTrip() ? vp.getTrip().getTripId() : null);
+                    v.setRouteId(vp.hasTrip() && vp.getTrip().hasRouteId() ? vp.getTrip().getRouteId() : null);
                     v.setLat(vp.hasPosition() ? vp.getPosition().getLatitude() : 0.0);
                     v.setLon(vp.hasPosition() ? vp.getPosition().getLongitude() : 0.0);
-                    v.setSpeed(vp.hasPosition() ? vp.getPosition().getOdometer() : 0.0);
+                    v.setSpeed(vp.hasPosition() ? vp.getPosition().getSpeed() : 0.0);
                     v.setTimestamp(vp.hasTimestamp() ? vp.getTimestamp() : Instant.now().getEpochSecond());
+
+                    if (v.getTripId() != null) {
+                        String routeId = staticService.getRouteIdForTrip(v.getTripId());
+                        if (routeId != null) {
+                            v.setRouteId(routeId);
+                            String routeName = staticService.getRouteNameForRoute(routeId);
+                            // ** FEATURE ENHANCEMENT: Create a fallback route name if the full name is missing. **
+                            if (routeName != null && !routeName.isBlank()) {
+                                v.setRouteName(routeName);
+                            } else {
+                                v.setRouteName("Route " + routeId); // e.g., "Route 76"
+                            }
+                        }
+                    }
                     store.save(v);
                 }
             }
+            log.info("Finished processing {} vehicles.", vehicleCount);
         } catch (Exception e) {
             log.error("Error polling GTFS-RT feed", e);
         }
     }
 }
+

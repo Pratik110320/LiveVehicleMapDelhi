@@ -5,6 +5,7 @@ public class VehicleDto {
     private String vehicleId;
     private String tripId;
     private String routeId;
+    private String routeName; // New field for the human-readable route name
     private double lat;
     private double lon;
     private double speed;
@@ -21,6 +22,8 @@ public class VehicleDto {
     public void setTripId(String tripId) { this.tripId = tripId; }
     public String getRouteId() { return routeId; }
     public void setRouteId(String routeId) { this.routeId = routeId; }
+    public String getRouteName() { return routeName; }
+    public void setRouteName(String routeName) { this.routeName = routeName; }
     public double getLat() { return lat; }
     public void setLat(double lat) { this.lat = lat; }
     public double getLon() { return lon; }
