@@ -10,6 +10,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.math.BigDecimal;
@@ -34,9 +38,6 @@ public class GtfsStaticService {
     private final List<StopTimeDto> stopTimes = new ArrayList<>();
 
 
-
-
-
     @PostConstruct
     public void loadStaticData() {
         loadData("agency.txt", this::parseAgency);
@@ -49,8 +50,23 @@ public class GtfsStaticService {
         loadData("stops.txt", this::parseStop);
     }
 
+    // ** NEW: Smart loading logic for both local and Docker environments **
+    private InputStream getInputStreamForFile(String fileName) throws IOException {
+        // For Render/Docker deployment, check for files in the path created by the Dockerfile
+        File dockerFile = new File("/app/static/" + fileName);
+        if (dockerFile.exists()) {
+            log.info("Loading GTFS data for '{}' from Docker volume.", fileName);
+            return new FileInputStream(dockerFile);
+        }
+        // For local development, fall back to the classpath
+        log.info("Loading GTFS data for '{}' from classpath.", fileName);
+        return new ClassPathResource("static/" + fileName).getInputStream();
+    }
+
+
     private void loadData(String fileName, CSVRecordProcessor processor) {
-        try (Reader reader = new InputStreamReader(new ClassPathResource("static/" + fileName).getInputStream());
+        // Use the new smart loader
+        try (Reader reader = new InputStreamReader(getInputStreamForFile(fileName));
              CSVParser csvParser = new CSVParser(reader, CSVFormat.DEFAULT.withFirstRecordAsHeader())) {
             for (CSVRecord record : csvParser) {
                 processor.process(record);
@@ -91,7 +107,9 @@ public class GtfsStaticService {
         fare.setPrice(new BigDecimal(record.get("price")));
         fare.setCurrencyType(record.get("currency_type"));
         fare.setPaymentMethod(Integer.parseInt(record.get("payment_method")));
-        fare.setTransfers(Integer.parseInt(record.get("transfers")));
+        // Handle potential empty transfers field
+        String transfers = record.get("transfers");
+        fare.setTransfers(transfers != null && !transfers.isEmpty() ? Integer.parseInt(transfers) : 0);
         fareAttributeMap.put(fare.getFareId(), fare);
     }
 

@@ -1,15 +1,27 @@
-# Use a lightweight, official Java 17 base image
+# Use a lightweight Java base image
 FROM eclipse-temurin:17-jdk-alpine
 
-# Set a working directory inside the container
+# ** NEW: Install tools needed to download and unzip data **
+RUN apk add --no-cache curl unzip
+
+# Set the working directory inside the container
 WORKDIR /app
 
-# Copy the compiled .jar file from the target directory into the container
-# The JAR file is created when you run "mvn package"
-COPY target/Live-Vehicle-Map-Delhi-0.0.1-SNAPSHOT.jar app.jar
+# ** NEW: Download and extract the GTFS static data during the build **
+# Create a directory for the static data
+RUN mkdir -p /app/static
+# Download the zip file from the official source and unzip it into the static directory
+RUN curl -L "https://otd.delhi.gov.in/gtfs/static/Delhi-GTFS-Static.zip" -o "/tmp/gtfs.zip" && \
+    unzip /tmp/gtfs.zip -d /app/static && \
+    rm /tmp/gtfs.zip
 
-# Expose the port that the Spring Boot application will run on
+# Copy the compiled JAR file into the container
+# This is done *after* downloading data to leverage Docker layer caching
+COPY target/*.jar app.jar
+
+# Expose the port the app runs on
 EXPOSE 8080
 
-# The command to run when the container starts
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# Command to run the application
+ENTRYPOINT ["java","-jar","app.jar"]
+
