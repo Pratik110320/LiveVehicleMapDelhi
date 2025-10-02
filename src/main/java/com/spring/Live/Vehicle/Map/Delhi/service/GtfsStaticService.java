@@ -1,195 +1,121 @@
 package com.spring.Live.Vehicle.Map.Delhi.service;
 
+import com.opencsv.bean.CsvToBeanBuilder;
 import com.spring.Live.Vehicle.Map.Delhi.model.*;
 import jakarta.annotation.PostConstruct;
-import org.apache.commons.csv.CSVFormat;
-import org.apache.commons.csv.CSVParser;
-import org.apache.commons.csv.CSVRecord;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.Reader;
-import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
 public class GtfsStaticService {
 
-    private final Logger log = LoggerFactory.getLogger(GtfsStaticService.class);
-
-    private final Map<String, String> tripToRouteMap = new ConcurrentHashMap<>();
-    private final Map<String, String> routeIdToNameMap = new ConcurrentHashMap<>();
-    private final Map<String, StopDto> stopsMap = new ConcurrentHashMap<>();
-    private final Map<String, AgencyDto> agencyMap = new ConcurrentHashMap<>();
-    private final Map<String, CalendarDto> calendarMap = new ConcurrentHashMap<>();
-    private final Map<String, FareAttributeDto> fareAttributeMap = new ConcurrentHashMap<>();
-    // ** OPTIMIZATION: Use maps for efficient lookups instead of large lists **
-    private final Map<String, List<FareRuleDto>> fareRulesByRoute = new ConcurrentHashMap<>();
-    private final Map<String, List<StopTimeDto>> stopTimesByTrip = new ConcurrentHashMap<>();
-
+    private Map<String, AgencyDto> agencies;
+    private Map<String, RouteDto> routes;
+    private Map<String, TripDto> trips;
+    private Map<String, StopDto> stops;
+    private Map<String, List<StopTimeDto>> stopTimesByTripId;
+    private List<FareRuleDto> fareRules;
+    private Map<String, FareAttributeDto> fareAttributes;
 
     @PostConstruct
-    public void loadStaticData() {
-        loadData("agency.txt", this::parseAgency);
-        loadData("calendar.txt", this::parseCalendar);
-        loadData("fare_attributes.txt", this::parseFareAttribute);
-        loadData("fare_rules.txt", this::parseFareRule);
-        loadData("stop_times.txt", this::parseStopTime);
-        loadData("trips.txt", this::parseTrip);
-        loadData("routes.txt", this::parseRoute);
-        loadData("stops.txt", this::parseStop);
+    public void loadGtfsData() {
+        agencies = loadCsvDataToMap("agency.txt", AgencyDto.class, AgencyDto::getAgencyId);
+        routes = loadCsvDataToMap("routes.txt", RouteDto.class, RouteDto::getRouteId);
+        trips = loadCsvDataToMap("trips.txt", TripDto.class, TripDto::getTripId);
+        stops = loadCsvDataToMap("stops.txt", StopDto.class, StopDto::getStopId);
+        fareAttributes = loadCsvDataToMap("fare_attributes.txt", FareAttributeDto.class, FareAttributeDto::getFareId);
+
+        // Correctly load fare_rules.txt into a List, as fare_id is not unique
+        fareRules = loadCsvDataToList("fare_rules.txt", FareRuleDto.class);
+
+        List<StopTimeDto> stopTimes = loadCsvDataToList("stop_times.txt", StopTimeDto.class);
+
+        stopTimesByTripId = stopTimes.stream().collect(Collectors.groupingBy(StopTimeDto::getTripId));
     }
 
-    private InputStream getInputStreamForFile(String fileName) throws IOException {
-        File dockerFile = new File("/app/static/" + fileName);
-        if (dockerFile.exists()) {
-            log.info("Loading GTFS data for '{}' from Docker volume.", fileName);
-            return new FileInputStream(dockerFile);
-        }
-        log.info("Loading GTFS data for '{}' from classpath.", fileName);
-        return new ClassPathResource("static/" + fileName).getInputStream();
-    }
-
-
-    private void loadData(String fileName, CSVRecordProcessor processor) {
-        try (Reader reader = new InputStreamReader(getInputStreamForFile(fileName));
-             CSVParser csvParser = new CSVParser(reader, CSVFormat.DEFAULT.withFirstRecordAsHeader().withTrim().withIgnoreEmptyLines())) {
-            for (CSVRecord record : csvParser) {
-                processor.process(record);
-            }
-            log.info("Successfully loaded data from {}.", fileName);
+    private <T> Map<String, T> loadCsvDataToMap(String fileName, Class<T> type, Function<T, String> keyExtractor) {
+        try {
+            // Using a collector that handles duplicate keys, keeping the first one encountered.
+            return loadCsvDataToList(fileName, type).stream()
+                    .collect(Collectors.toMap(keyExtractor, Function.identity(), (first, second) -> first));
         } catch (Exception e) {
-            log.warn("Failed to load or parse GTFS static data from {}. This may be optional.", fileName, e);
+            System.err.println("Error loading map data from " + fileName);
+            e.printStackTrace();
+            return new HashMap<>();
         }
     }
 
-    private void parseAgency(CSVRecord record) {
-        AgencyDto agency = new AgencyDto();
-        agency.setAgencyId(record.get("agency_id"));
-        agency.setAgencyName(record.get("agency_name"));
-        agency.setAgencyUrl(record.get("agency_url"));
-        agency.setAgencyTimezone(record.get("agency_timezone"));
-        agencyMap.put(agency.getAgencyId(), agency);
-    }
-
-    private void parseCalendar(CSVRecord record) {
-        CalendarDto calendar = new CalendarDto();
-        calendar.setServiceId(record.get("service_id"));
-        calendar.setMonday( "1".equals(record.get("monday")));
-        calendar.setTuesday( "1".equals(record.get("tuesday")));
-        calendar.setWednesday( "1".equals(record.get("wednesday")));
-        calendar.setThursday( "1".equals(record.get("thursday")));
-        calendar.setFriday( "1".equals(record.get("friday")));
-        calendar.setSaturday( "1".equals(record.get("saturday")));
-        calendar.setSunday( "1".equals(record.get("sunday")));
-        calendar.setStartDate(record.get("start_date"));
-        calendar.setEndDate(record.get("end_date"));
-        calendarMap.put(calendar.getServiceId(), calendar);
-    }
-
-    private void parseFareAttribute(CSVRecord record) {
-        FareAttributeDto fare = new FareAttributeDto();
-        fare.setFareId(record.get("fare_id"));
-        fare.setPrice(new BigDecimal(record.get("price")));
-        fare.setCurrencyType(record.get("currency_type"));
-        fare.setPaymentMethod(Integer.parseInt(record.get("payment_method")));
-        String transfers = record.get("transfers");
-        fare.setTransfers(transfers != null && !transfers.isEmpty() ? Integer.parseInt(transfers) : 0);
-        fareAttributeMap.put(fare.getFareId(), fare);
-    }
-
-    private void parseFareRule(CSVRecord record) {
-        FareRuleDto rule = new FareRuleDto();
-        rule.setFareId(record.get("fare_id"));
-        String routeId = record.get("route_id");
-        rule.setRouteId(routeId);
-        rule.setOrigin_id(record.get("origin_id"));
-        rule.setDestination_id(record.get("destination_id"));
-        if (routeId != null && !routeId.isEmpty()) {
-            fareRulesByRoute.computeIfAbsent(routeId, k -> new ArrayList<>()).add(rule);
+    private <T> List<T> loadCsvDataToList(String fileName, Class<T> type) {
+        try (InputStreamReader reader = new InputStreamReader(Objects.requireNonNull(getClass().getClassLoader().getResourceAsStream(fileName)))) {
+            return new CsvToBeanBuilder<T>(reader)
+                    .withType(type)
+                    .build()
+                    .parse();
+        } catch (Exception e) {
+            System.err.println("Error loading list data from " + fileName);
+            e.printStackTrace();
+            return new ArrayList<>();
         }
     }
 
-    private void parseStopTime(CSVRecord record) {
-        StopTimeDto stopTime = new StopTimeDto();
-        stopTime.setTripId(record.get("trip_id"));
-        stopTime.setArrivalTime(record.get("arrival_time"));
-        stopTime.setDepartureTime(record.get("departure_time"));
-        stopTime.setStopId(record.get("stop_id"));
-        stopTime.setStopSequence(Integer.parseInt(record.get("stop_sequence")));
-        stopTimesByTrip.computeIfAbsent(stopTime.getTripId(), k -> new ArrayList<>()).add(stopTime);
+    public Map<String, RouteDto> getRoutes() {
+        return routes;
     }
 
-    private void parseTrip(CSVRecord record) {
-        tripToRouteMap.put(record.get("trip_id"), record.get("route_id"));
+    public Map<String, TripDto> getTrips() {
+        return trips;
     }
 
-    private void parseRoute(CSVRecord record) {
-        routeIdToNameMap.put(record.get("route_id"), record.get("route_long_name"));
+    public Collection<RouteDto> getAllRoutes() {
+        return routes.values();
     }
 
-    private void parseStop(CSVRecord record) {
-        StopDto stop = new StopDto();
-        stop.setStopId(record.get("stop_id"));
-        stop.setStopName(record.get("stop_name"));
-        stop.setStopLat(Double.parseDouble(record.get("stop_lat")));
-        stop.setStopLon(Double.parseDouble(record.get("stop_lon")));
-        stopsMap.put(stop.getStopId(), stop);
-    }
+    public List<StopDto> getStopsByRouteId(String routeId) {
+        // Find a representative trip for the given route
+        Optional<TripDto> representativeTrip = trips.values().stream()
+                .filter(trip -> routeId.equals(trip.getRouteId()))
+                .findFirst();
 
-    public String getRouteIdForTrip(String tripId) { return tripToRouteMap.get(tripId); }
-    public String getRouteNameForRoute(String routeId) { return routeIdToNameMap.get(routeId); }
-    public List<StopDto> getAllStops() { return new ArrayList<>(stopsMap.values()); }
-    public List<AgencyDto> getAllAgencies() { return new ArrayList<>(agencyMap.values()); }
-    public List<CalendarDto> getAllCalendars() { return new ArrayList<>(calendarMap.values()); }
+        if (representativeTrip.isEmpty()) {
+            return Collections.emptyList();
+        }
 
-    // ** REMOVED: Method to get ALL fare attributes to prevent memory issues **
+        // Get stop times for that trip and sort by sequence
+        List<StopTimeDto> stopTimesForTrip = new ArrayList<>(stopTimesByTripId.getOrDefault(representativeTrip.get().getTripId(), Collections.emptyList()));
+        stopTimesForTrip.sort(Comparator.comparingInt(StopTimeDto::getStopSequence));
 
-    public List<FareRuleDto> getFareRulesForRoute(String routeId) {
-        return fareRulesByRoute.getOrDefault(routeId, List.of());
-    }
-    public List<StopTimeDto> getStopTimesForTrip(String tripId) {
-        return stopTimesByTrip.getOrDefault(tripId, List.of()).stream()
-                .sorted(Comparator.comparingInt(StopTimeDto::getStopSequence))
-                .collect(Collectors.toList());
-    }
-
-    public List<StopDto> getRouteStopsForTrip(String tripId) {
-        return getStopTimesForTrip(tripId).stream()
-                .map(stopTime -> stopsMap.get(stopTime.getStopId()))
+        // Map stop times to stop data
+        return stopTimesForTrip.stream()
+                .map(stopTime -> stops.get(stopTime.getStopId()))
                 .filter(Objects::nonNull)
                 .collect(Collectors.toList());
     }
 
-    // ** NEW: Method to get specific fares for a given route **
-    public List<FareAttributeDto> getFareAttributesForRoute(String routeId) {
-        List<FareRuleDto> rules = getFareRulesForRoute(routeId);
-        if (rules.isEmpty()) {
-            return List.of();
+    public List<StopDto> searchStopsByName(String query) {
+        if (query == null || query.trim().isEmpty()) {
+            return Collections.emptyList();
         }
-        return rules.stream()
-                .map(FareRuleDto::getFareId)
-                .distinct()
-                .map(fareAttributeMap::get)
-                .filter(Objects::nonNull)
+        String lowerCaseQuery = query.toLowerCase();
+        return stops.values().stream()
+                .filter(stop -> stop.getStopName().toLowerCase().contains(lowerCaseQuery))
+                .limit(50) // Limit results for performance
                 .collect(Collectors.toList());
     }
 
-    @FunctionalInterface
-    interface CSVRecordProcessor {
-        void process(CSVRecord record);
+    public FareAttributeDto getFare(String routeId, String fromStopId, String toStopId) {
+        // Find a fare rule that matches the route, origin, and destination
+        // *** FIX: Call .stream() directly on the fareRules list ***
+        Optional<FareRuleDto> matchingRule = fareRules.stream()
+                .filter(rule -> routeId.equals(rule.getRouteId()) &&
+                        fromStopId.equals(rule.getOrigin_id()) &&
+                        toStopId.equals(rule.getDestination_id()))
+                .findFirst();
+
+        return matchingRule.map(fareRuleDto -> fareAttributes.get(fareRuleDto.getFareId())).orElse(null);
     }
 }
+

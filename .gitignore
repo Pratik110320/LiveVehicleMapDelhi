@@ -113,11 +113,6 @@ spring-boot-app/
 /certs/
 
 # ** NEW: Ignore large GTFS static data files which are handled by the Docker build **
-src/main/resources/static/agency.txt
-src/main/resources/static/calendar.txt
+
 src/main/resources/static/fare_attributes.txt
-src/main/resources/static/fare_rules.txt
-src/main/resources/static/routes.txt
 src/main/resources/static/stop_times.txt
-src/main/resources/static/stops.txt
-src/main/resources/static/trips.txt
