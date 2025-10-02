@@ -106,4 +106,3 @@ public class VehiclesController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 }
-

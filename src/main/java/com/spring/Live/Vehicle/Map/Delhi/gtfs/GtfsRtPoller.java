@@ -15,6 +15,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 
 
 import java.time.Instant;
+import java.util.List;
 
 
 @Component
@@ -51,44 +52,36 @@ public class GtfsRtPoller {
 
             GtfsRealtime.FeedMessage feed = GtfsRealtime.FeedMessage.parseFrom(data);
             log.info("Feed parsed successfully. Found {} entities.", feed.getEntityCount());
-            int vehicleCount = 0;
+            int processedVehicleCount = 0;
+            int totalVehicleCount = 0;
 
             for (GtfsRealtime.FeedEntity entity : feed.getEntityList()) {
                 if (entity.hasVehicle()) {
-                    vehicleCount++;
+                    totalVehicleCount++;
                     GtfsRealtime.VehiclePosition vp = entity.getVehicle();
                     VehicleDto v = new VehicleDto();
 
                     String vehicleId = vp.hasVehicle() && vp.getVehicle().hasId() ? vp.getVehicle().getId() : null;
                     v.setVehicleId(vehicleId);
 
-                    // ** NEW: Improved logic to find route information **
                     String tripId = null;
                     String routeId = null;
 
                     if (vp.hasTrip()) {
                         GtfsRealtime.TripDescriptor trip = vp.getTrip();
                         tripId = trip.hasTripId() ? trip.getTripId() : null;
-                        // Prioritize route_id from the realtime feed if it exists, as trip_id may not match static data
                         routeId = trip.hasRouteId() ? trip.getRouteId() : null;
                     }
                     v.setTripId(tripId);
 
-                    // If routeId was not in the realtime feed, fall back to looking it up from static data using tripId
                     if (routeId == null && tripId != null) {
                         routeId = staticService.getRouteIdForTrip(tripId);
                     }
 
-                    // Now that we have the best possible routeId, find the route name
                     if (routeId != null) {
                         v.setRouteId(routeId);
                         String routeName = staticService.getRouteNameForRoute(routeId);
-                        if (routeName != null && !routeName.isBlank()) {
-                            v.setRouteName(routeName);
-                        } else {
-                            // Fallback if the route name is missing but we have an ID
-                            v.setRouteName("Route " + routeId);
-                        }
+                        v.setRouteName(routeName != null && !routeName.isBlank() ? routeName : "Route " + routeId);
                     }
 
                     v.setLat(vp.hasPosition() ? vp.getPosition().getLatitude() : 0.0);
@@ -96,10 +89,18 @@ public class GtfsRtPoller {
                     v.setSpeed(vp.hasPosition() ? vp.getPosition().getSpeed() : 0.0);
                     v.setTimestamp(vp.hasTimestamp() ? vp.getTimestamp() : Instant.now().getEpochSecond());
 
-                    store.save(v);
+                    // ** NEW: Validation step before saving the vehicle **
+                    // We check if the tripId from the live feed actually exists in our static stop_times data.
+                    // If it doesn't, we skip this vehicle, as we won't be able to show its stops.
+                    if (tripId != null && !staticService.getStopTimesForTrip(tripId).isEmpty()) {
+                        store.save(v);
+                        processedVehicleCount++;
+                    } else {
+                        log.debug("Skipping vehicle {} on trip {} as it has no matching static data.", vehicleId, tripId);
+                    }
                 }
             }
-            log.info("Finished processing {} vehicles.", vehicleCount);
+            log.info("Finished processing. Total vehicles in feed: {}. Validated and stored: {}.", totalVehicleCount, processedVehicleCount);
         } catch (Exception e) {
             log.error("Error polling GTFS-RT feed", e);
         }

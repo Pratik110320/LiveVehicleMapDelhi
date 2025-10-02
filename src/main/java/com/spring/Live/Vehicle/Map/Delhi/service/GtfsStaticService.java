@@ -193,4 +193,3 @@ public class GtfsStaticService {
         void process(CSVRecord record);
     }
 }
-
