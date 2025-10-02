@@ -1,89 +1,30 @@
 package com.spring.Live.Vehicle.Map.Delhi.controller;
 
-
 import com.spring.Live.Vehicle.Map.Delhi.model.*;
-import com.spring.Live.Vehicle.Map.Delhi.service.GtfsStaticService;
 import com.spring.Live.Vehicle.Map.Delhi.service.VehicleStoreService;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.CrossOrigin;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
-
+import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
-import java.util.List;
 
-
+/**
+ * Controller for status checks and fetching individual vehicle data.
+ * Real-time updates are handled by SseController.
+ */
 @RestController
 @RequestMapping("/api")
 @CrossOrigin(origins = "*") // Allow all origins for simplicity
 public class VehiclesController {
     private final VehicleStoreService store;
-    private final GtfsStaticService staticService;
 
-    public VehiclesController(VehicleStoreService store, GtfsStaticService staticService) {
+    public VehiclesController(VehicleStoreService store) {
         this.store = store;
-        this.staticService = staticService;
     }
 
-    @GetMapping("/vehicles")
-    public ResponseEntity<List<VehicleDto>> vehicles() {
-        return ResponseEntity.ok(store.getAll());
-    }
-
-    @GetMapping("/stops")
-    public ResponseEntity<List<StopDto>> stops() {
-        return ResponseEntity.ok(staticService.getAllStops());
-    }
-
-    @GetMapping("/agencies")
-    public ResponseEntity<List<AgencyDto>> agencies() {
-        return ResponseEntity.ok(staticService.getAllAgencies());
-    }
-
-    @GetMapping("/calendars")
-    public ResponseEntity<List<CalendarDto>> calendars() {
-        return ResponseEntity.ok(staticService.getAllCalendars());
-    }
-
-    // ** REMOVED: Endpoint that returned all fare attributes, causing memory error **
-
-    @GetMapping("/fare-rules/{routeId}")
-    public ResponseEntity<List<FareRuleDto>> fareRules(@PathVariable String routeId) {
-        return ResponseEntity.ok(staticService.getFareRulesForRoute(routeId));
-    }
-
-    @GetMapping("/stop-times/{tripId}")
-    public ResponseEntity<List<StopTimeDto>> stopTimes(@PathVariable String tripId) {
-        List<StopTimeDto> stopTimes = staticService.getStopTimesForTrip(tripId);
-        if (stopTimes.isEmpty()) {
-            return ResponseEntity.notFound().build();
-        }
-        return ResponseEntity.ok(stopTimes);
-    }
-
-    @GetMapping("/route-stops/{tripId}")
-    public ResponseEntity<List<StopDto>> getRouteStops(@PathVariable String tripId) {
-        List<StopDto> stops = staticService.getRouteStopsForTrip(tripId);
-        if (stops.isEmpty()) {
-            return ResponseEntity.notFound().build();
-        }
-        return ResponseEntity.ok(stops);
-    }
-
-    // ** NEW: Endpoint to get specific fares for a route **
-    @GetMapping("/fares/{routeId}")
-    public ResponseEntity<List<FareAttributeDto>> getFaresForRoute(@PathVariable String routeId) {
-        List<FareAttributeDto> fares = staticService.getFareAttributesForRoute(routeId);
-        if (fares.isEmpty()) {
-            return ResponseEntity.notFound().build();
-        }
-        return ResponseEntity.ok(fares);
-    }
-
-
+    /**
+     * Provides a status check of the application's real-time feed.
+     * @return A map containing the timestamp of the last feed and its age.
+     */
     @GetMapping("/status")
     public ResponseEntity<?> status() {
         Long ts = store.getLastFeedTs();
@@ -97,11 +38,14 @@ public class VehiclesController {
         );
     }
 
+    /**
+     * Retrieves the last known position of a single vehicle by its ID.
+     * @param id The vehicle ID to look up.
+     * @return A single VehicleDto or 404 if not found.
+     */
     @GetMapping("/vehicles/{id}")
     public ResponseEntity<VehicleDto> getVehicle(@PathVariable String id) {
-        return store.getAll().stream()
-                .filter(v -> id.equals(v.getVehicleId()) || id.equals(v.getTripId()))
-                .findFirst()
+        return store.getById(id)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }

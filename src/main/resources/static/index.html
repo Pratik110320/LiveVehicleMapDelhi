@@ -5,376 +5,300 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Delhi Live Bus Tracker</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-          crossorigin=""/>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-            crossorigin=""></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
-
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', sans-serif; }
-        .leaflet-container { height: 100vh; width: 100%; }
-        .sidebar {
-            transition: width 300ms cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        .sidebar-content {
-             min-width: 18rem; /* 288px */
-        }
+        body { font-family: 'Inter', sans-serif; overflow: hidden; }
+        .leaflet-container { height: 100vh; width: 100%; background-color: #f0f2f5; }
+        .sidebar { transition: transform 300ms cubic-bezier(0.4, 0, 0.2, 1); }
         .bus-marker {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 32px;
-            height: 32px;
-            background-color: #1d4ed8;
-            color: white;
-            border-radius: 50% 50% 50% 0;
-            transform: rotate(-45deg);
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            border: 2px solid white;
-        }
-        .bus-marker-inner {
-            transform: rotate(45deg);
-            font-size: 10px;
-            font-weight: bold;
+            display: flex; align-items: center; justify-content: center;
+            width: 28px; height: 28px; background-color: #1a73e8;
+            color: white; border-radius: 50%; box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            border: 2px solid white; font-size: 11px; font-weight: 600;
         }
         .stop-marker-icon {
-            background-color: white;
-            border: 2px solid #333;
-            border-radius: 50%;
-            width: 10px;
-            height: 10px;
+            background-color: #fff; border: 2px solid #5f6368;
+            border-radius: 50%; width: 8px; height: 8px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.2);
         }
-        /* Simple spinner */
+        .stop-marker-icon.highlighted {
+            background-color: #1a73e8; border-color: #fff; transform: scale(1.5);
+        }
+        .stop-marker-icon.selected {
+            background-color: #fbbc05; border: 2px solid #fff; transform: scale(2);
+        }
         .loader {
-            border: 4px solid #f3f3f3;
-            border-radius: 50%;
-            border-top: 4px solid #3498db;
-            width: 30px;
-            height: 30px;
-            animation: spin 1s linear infinite;
+            border: 4px solid #f3f3f3; border-radius: 50%; border-top: 4px solid #1a73e8;
+            width: 30px; height: 30px; animation: spin 1s linear infinite;
         }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .sidebar-content { scrollbar-width: thin; scrollbar-color: #a0aec0 #edf2f7; }
+        .sidebar-content::-webkit-scrollbar { width: 6px; }
+        .sidebar-content::-webkit-scrollbar-track { background: #edf2f7; }
+        .sidebar-content::-webkit-scrollbar-thumb { background-color: #a0aec0; border-radius: 10px; border: 3px solid #edf2f7; }
     </style>
 </head>
-<body class="bg-gray-100 antialiased">
-
+<body class="bg-gray-100">
 <div id="root"></div>
-
 <script type="text/babel">
     const { useState, useEffect, useRef, useCallback } = React;
 
     // --- Main App Component ---
     const App = () => {
         const [vehicles, setVehicles] = useState({});
-        const [allRoutes, setAllRoutes] = useState([]);
-        const [filteredRoutes, setFilteredRoutes] = useState([]);
-        const [selectedRoute, setSelectedRoute] = useState(null);
-        const [routeStops, setRouteStops] = useState([]);
-        const [sidebarVisible, setSidebarVisible] = useState(true);
-        const [isLoadingRoutes, setIsLoadingRoutes] = useState(true);
+        const [allStops, setAllStops] = useState([]);
+        const [sidebarView, setSidebarView] = useState('hidden'); // hidden, vehicle-details, stop-details
 
-        // Fetch all routes on initial load
+        const [selectedVehicle, setSelectedVehicle] = useState(null);
+        const [selectedStop, setSelectedStop] = useState(null);
+
+        const [tripSchedule, setTripSchedule] = useState({ loading: false, data: [] });
+        const [routesForStop, setRoutesForStop] = useState({ loading: false, data: [] });
+        const [routePath, setRoutePath] = useState([]);
+
+        // Initial data fetch
         useEffect(() => {
-            setIsLoadingRoutes(true);
-            fetch('/api/routes')
-                .then(res => res.json())
-                .then(data => {
-                    const sortedRoutes = data.sort((a, b) => {
-                        const nameA = a.routeShortName || a.routeLongName || '';
-                        const nameB = b.routeShortName || b.routeLongName || '';
-                        return nameA.localeCompare(nameB, undefined, { numeric: true });
-                    });
-                    setAllRoutes(sortedRoutes);
-                    setFilteredRoutes(sortedRoutes);
-                })
-                .catch(err => console.error("Failed to fetch routes:", err))
-                .finally(() => setIsLoadingRoutes(false));
+            fetch('/api/stops/all').then(res => res.json()).then(setAllStops);
         }, []);
 
-        // Establish SSE connection for live vehicle data
+        // Live vehicle updates
         useEffect(() => {
             const eventSource = new EventSource('/vehicles');
-            eventSource.onmessage = (event) => {
-                const newVehicles = JSON.parse(event.data);
-                setVehicles(prevVehicles => {
-                    const updatedVehicles = { ...prevVehicles };
-                    newVehicles.forEach(v => {
-                        updatedVehicles[v.vehicleId] = v;
-                    });
-                    return updatedVehicles;
-                });
-            };
-            eventSource.onerror = (err) => {
-                console.error("EventSource failed:", err);
-                eventSource.close();
+            eventSource.onmessage = e => {
+                const vehicleList = JSON.parse(e.data);
+                setVehicles(vehicleList.reduce((obj, v) => ({...obj, [v.vehicleId]: v }), {}));
             };
             return () => eventSource.close();
         }, []);
 
-        // Handle route selection
-        const handleSelectRoute = useCallback((route) => {
-            if (selectedRoute && selectedRoute.routeId === route.routeId) {
-                setSelectedRoute(null);
-                setRouteStops([]);
-            } else {
-                setSelectedRoute(route);
-                setRouteStops([]); // Clear old stops immediately
-                fetch(`/api/routes/${route.routeId}/stops`)
-                    .then(res => res.json())
-                    .then(setRouteStops)
-                    .catch(err => console.error("Failed to fetch stops:", err));
-            }
-        }, [selectedRoute]);
+        const handleSelectVehicle = useCallback((vehicle) => {
+            setSelectedVehicle(vehicle);
+            setSelectedStop(null);
+            setSidebarView('vehicle-details');
 
-        const handleSearch = useCallback((query) => {
-            if (!query) {
-                setFilteredRoutes(allRoutes);
-                return;
-            }
-            const lowerQuery = query.toLowerCase();
-            const filtered = allRoutes.filter(route =>
-                (route.routeShortName && route.routeShortName.toLowerCase().includes(lowerQuery)) ||
-                (route.routeLongName && route.routeLongName.toLowerCase().includes(lowerQuery))
-            );
-            setFilteredRoutes(filtered);
-        }, [allRoutes]);
+            setTripSchedule({ loading: true, data: [] });
+            setRoutePath([]);
 
-        const vehiclesOnSelectedRoute = Object.values(vehicles).filter(v =>
-            selectedRoute ? v.routeId === selectedRoute.routeId : true
-        );
+            fetch(`/api/trips/${vehicle.tripId}/schedule`).then(res => res.json()).then(data => setTripSchedule({ loading: false, data }));
+            fetch(`/api/routes/${vehicle.routeId}/path`).then(res => res.json()).then(setRoutePath);
+        }, []);
+
+        const handleSelectStop = useCallback((stop) => {
+            setSelectedStop(stop);
+            setSelectedVehicle(null);
+            setSidebarView('stop-details');
+
+            setRoutesForStop({ loading: true, data: [] });
+            setRoutePath([]);
+
+            fetch(`/api/stops/${stop.stopId}/routes`).then(res => res.json()).then(data => setRoutesForStop({ loading: false, data }));
+        }, []);
+
+        const handleSelectRouteFromStop = useCallback((route) => {
+            fetch(`/api/routes/${route.routeId}/path`).then(res => res.json()).then(setRoutePath);
+        }, []);
+
+        const clearSelection = () => {
+            setSelectedVehicle(null);
+            setSelectedStop(null);
+            setSidebarView('hidden');
+            setRoutePath([]);
+            setTripSchedule({ loading: false, data: [] });
+            setRoutesForStop({ loading: false, data: [] });
+        };
 
         return (
-            <div className="flex h-screen w-screen overflow-hidden">
+            <div className="relative h-screen w-screen">
                 <Sidebar
-                    routes={filteredRoutes}
-                    onSelectRoute={handleSelectRoute}
-                    selectedRoute={selectedRoute}
-                    onSearch={handleSearch}
-                    isVisible={sidebarVisible}
-                    routeStops={routeStops}
-                    isLoading={isLoadingRoutes}
+                    view={sidebarView}
+                    vehicle={selectedVehicle}
+                    stop={selectedStop}
+                    tripSchedule={tripSchedule}
+                    routesForStop={routesForStop}
+                    onSelectRoute={handleSelectRouteFromStop}
+                    onClear={clearSelection}
                 />
-                <div className="flex-1 relative">
-                    <MapComponent
-                        vehicles={vehiclesOnSelectedRoute}
-                        routeStops={routeStops}
-                    />
-                    <button
-                        onClick={() => setSidebarVisible(!sidebarVisible)}
-                        title={sidebarVisible ? "Hide sidebar" : "Show sidebar"}
-                        className={`absolute top-4 bg-white rounded-full p-2 shadow-lg z-[1000] transition-all duration-300 ease-in-out ${sidebarVisible ? 'left-[19rem]' : 'left-4'}`}
-                        >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
-                    </button>
-                </div>
+                <MapComponent
+                    vehicles={Object.values(vehicles)}
+                    allStops={allStops}
+                    onSelectVehicle={handleSelectVehicle}
+                    onSelectStop={handleSelectStop}
+                    routePath={routePath}
+                    tripScheduleStops={tripSchedule.data.map(item => item.stop)}
+                    selectedStop={selectedStop}
+                />
             </div>
         );
     };
 
-    // --- Fare Calculator Component ---
-    const FareCalculator = ({ selectedRoute, routeStops }) => {
-        const [fromStop, setFromStop] = useState('');
-        const [toStop, setToStop] = useState('');
-        const [fareResult, setFareResult] = useState(null);
-        const [isCalculating, setIsCalculating] = useState(false);
-
-        // Reset when route changes
-        useEffect(() => {
-            setFromStop('');
-            setToStop('');
-            setFareResult(null);
-        }, [selectedRoute]);
-
-        const handleCalculateFare = () => {
-            if (!fromStop || !toStop) {
-                setFareResult({ error: "Please select origin and destination." });
-                return;
-            }
-            if (fromStop === toStop) {
-                setFareResult({ error: "Origin and destination must be different."});
-                return;
-            }
-
-            setIsCalculating(true);
-            setFareResult(null);
-            fetch(`/api/fare?routeId=${selectedRoute.routeId}&fromStopId=${fromStop}&toStopId=${toStop}`)
-                .then(res => {
-                    if (!res.ok) {
-                        throw new Error('Fare not found');
-                    }
-                    return res.json();
-                })
-                .then(data => setFareResult(data))
-                .catch(err => setFareResult({ error: "Fare info not available for this trip." }))
-                .finally(() => setIsCalculating(false));
-        };
-
-        if (!selectedRoute) return null;
-
-        return (
-            <div className="p-4 border-t">
-                <h3 className="font-bold text-gray-700 mb-3">Calculate Fare</h3>
-                <div className="space-y-3">
-                    <div>
-                        <label htmlFor="fromStop" className="block text-sm font-medium text-gray-600 mb-1">From</label>
-                        <select id="fromStop" value={fromStop} onChange={e => setFromStop(e.target.value)} className="w-full p-2 border rounded-lg text-sm bg-gray-50 focus:ring-blue-500 focus:border-blue-500">
-                            <option value="">Select origin</option>
-                            {routeStops.map(stop => <option key={stop.stopId} value={stop.stopId}>{stop.stopName}</option>)}
-                        </select>
-                    </div>
-                     <div>
-                        <label htmlFor="toStop" className="block text-sm font-medium text-gray-600 mb-1">To</label>
-                        <select id="toStop" value={toStop} onChange={e => setToStop(e.target.value)} className="w-full p-2 border rounded-lg text-sm bg-gray-50 focus:ring-blue-500 focus:border-blue-500">
-                            <option value="">Select destination</option>
-                            {routeStops.map(stop => <option key={stop.stopId} value={stop.stopId}>{stop.stopName}</option>)}
-                        </select>
-                    </div>
-                    <button onClick={handleCalculateFare} disabled={isCalculating} className="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-blue-300 flex items-center justify-center">
-                        {isCalculating ? <div className="loader !w-5 !h-5 !border-t-white"></div> : 'Get Fare'}
-                    </button>
-                    {fareResult && (
-                        <div className={`mt-3 p-3 rounded-lg text-center text-sm font-medium ${fareResult.error ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
-                           {fareResult.error ? fareResult.error : `Fare: ₹${parseFloat(fareResult.price).toFixed(2)}`}
-                        </div>
-                    )}
-                </div>
-            </div>
-        )
-    }
-
     // --- Sidebar Component ---
-    const Sidebar = ({ routes, onSelectRoute, selectedRoute, onSearch, isVisible, routeStops, isLoading }) => {
+    const Sidebar = ({ view, vehicle, stop, tripSchedule, routesForStop, onSelectRoute, onClear }) => {
+        const isVisible = view !== 'hidden';
+
         return (
-            <div className={`sidebar bg-white shadow-lg flex flex-col ${isVisible ? 'w-72' : 'w-0'}`}>
-                <div className="sidebar-content flex flex-col h-full overflow-hidden">
-                    <div className="p-4 border-b">
-                        <h1 className="text-xl font-bold text-gray-800">Delhi Bus Tracker</h1>
-                        <p className="text-sm text-gray-500">Live Vehicle Positions</p>
-                        <input
-                            type="text"
-                            placeholder="Search for a route..."
-                            onChange={(e) => onSearch(e.target.value)}
-                            className="w-full mt-3 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
+            <div className={`sidebar absolute top-0 left-0 h-full w-80 md:w-96 bg-white shadow-lg z-[1000] transform ${isVisible ? 'translate-x-0' : '-translate-x-full'}`}>
+                <div className="flex flex-col h-full">
+                    <div className="p-4 border-b flex justify-between items-center">
+                        <h2 className="text-lg font-bold text-gray-800">
+                           {view === 'vehicle-details' && `Route ${vehicle?.routeName}`}
+                           {view === 'stop-details' && `Stop Details`}
+                        </h2>
+                        <button onClick={onClear} className="p-1 rounded-full hover:bg-gray-200">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                        </button>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto">
-                        {isLoading ? (
-                            <div className="flex justify-center items-center h-full"><div className="loader"></div></div>
-                        ) : (
-                            <ul className="p-2">
-                                {routes.map(route => (
-                                    <li key={route.routeId}>
-                                        <button
-                                            onClick={() => onSelectRoute(route)}
-                                            className={`w-full text-left p-2 my-1 rounded-lg transition-colors ${selectedRoute && selectedRoute.routeId === route.routeId ? 'bg-blue-600 text-white' : 'hover:bg-gray-100'}`}
-                                        >
-                                            <span className="font-bold w-12 inline-block">{route.routeShortName || 'Bus'}</span>
-                                            <span className="text-sm">{route.routeLongName}</span>
-                                        </button>
+                    <div className="flex-1 overflow-y-auto sidebar-content">
+                        {view === 'vehicle-details' && (
+                            tripSchedule.loading ? <div className="flex justify-center p-8"><div className="loader"></div></div> :
+                            <ul>
+                                {tripSchedule.data.map((item, index) => (
+                                    <li key={index} className="border-b p-3 flex items-center">
+                                        <div className="text-xs font-semibold text-gray-600 w-16">{item.stopTime.arrivalTime.substring(0,5)}</div>
+                                        <div className="pl-3 border-l-2 border-gray-300">
+                                            <p className="font-medium text-gray-800">{item.stop.stopName}</p>
+                                        </div>
                                     </li>
                                 ))}
                             </ul>
                         )}
+                        {view === 'stop-details' && (
+                            routesForStop.loading ? <div className="flex justify-center p-8"><div className="loader"></div></div> :
+                            <div>
+                                <h3 className="p-4 font-bold text-gray-700">{stop?.stopName}</h3>
+                                <ul className="px-2">
+                                    {routesForStop.data.map(route => (
+                                        <li key={route.routeId}>
+                                            <button onClick={() => onSelectRoute(route)} className="w-full text-left p-2.5 my-1 rounded-lg hover:bg-gray-100 focus:bg-blue-100 focus:outline-none">
+                                                <span className="font-bold w-14 inline-block">{route.routeShortName}</span>
+                                                <span className="text-sm">{route.routeLongName}</span>
+                                            </button>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
                     </div>
-                    <FareCalculator selectedRoute={selectedRoute} routeStops={routeStops} />
                 </div>
             </div>
         );
     };
 
     // --- Map Component ---
-    const MapComponent = ({ vehicles, routeStops }) => {
+    const MapComponent = ({ vehicles, allStops, onSelectVehicle, onSelectStop, routePath, tripScheduleStops, selectedStop }) => {
         const mapRef = useRef(null);
-        const markersRef = useRef({});
+        const vehicleMarkersRef = useRef({});
+        const stopMarkersRef = useRef({});
         const routeLayerRef = useRef(null);
+        const stopsLayerRef = useRef(null);
 
-        // Initialize map
+        // Init map
         useEffect(() => {
             if (!mapRef.current) {
-                mapRef.current = L.map('map').setView([28.6139, 77.2090], 11);
-                L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-                }).addTo(mapRef.current);
+                mapRef.current = L.map('map', { zoomControl: false }).setView([28.6139, 77.2090], 12);
+                L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { attribution: '&copy; OpenStreetMap &copy; CARTO' }).addTo(mapRef.current);
+                L.control.zoom({ position: 'topright' }).addTo(mapRef.current);
+                routeLayerRef.current = L.layerGroup().addTo(mapRef.current);
+                stopsLayerRef.current = L.layerGroup().addTo(mapRef.current);
             }
         }, []);
 
+        // Draw all stops and manage visibility
+        useEffect(() => {
+            const map = mapRef.current;
+            if (!map || allStops.length === 0) return;
+
+            Object.values(stopMarkersRef.current).forEach(m => m.remove());
+            stopMarkersRef.current = {};
+
+            allStops.forEach(stop => {
+                const marker = L.marker([stop.stopLat, stop.stopLon], {
+                    icon: L.divIcon({ className: 'stop-marker-icon', iconSize: [8, 8] }), zIndexOffset: 100
+                }).on('click', () => onSelectStop(stop));
+                stopMarkersRef.current[stop.stopId] = marker;
+            });
+
+            const manageStopVisibility = () => {
+                const zoom = map.getZoom();
+                Object.values(stopMarkersRef.current).forEach(marker => {
+                    if (zoom >= 14) {
+                        if (!stopsLayerRef.current.hasLayer(marker)) stopsLayerRef.current.addLayer(marker);
+                    } else {
+                        if (stopsLayerRef.current.hasLayer(marker)) stopsLayerRef.current.removeLayer(marker);
+                    }
+                });
+            };
+            map.on('zoomend', manageStopVisibility);
+            manageStopVisibility();
+            return () => map.off('zoomend', manageStopVisibility);
+        }, [allStops, onSelectStop]);
+
+        // Highlight selected/route stops
+        useEffect(() => {
+            const tripStopIds = new Set(tripScheduleStops.map(s => s.stopId));
+            Object.entries(stopMarkersRef.current).forEach(([id, marker]) => {
+                let className = 'stop-marker-icon';
+                if (selectedStop?.stopId === id) className += ' selected';
+                else if (tripStopIds.has(id)) className += ' highlighted';
+                marker.setIcon(L.divIcon({ className, iconSize: [8, 8] }));
+
+                if (className !== 'stop-marker-icon' && !stopsLayerRef.current.hasLayer(marker)) {
+                    stopsLayerRef.current.addLayer(marker);
+                }
+            });
+        }, [tripScheduleStops, selectedStop]);
+
+        // Draw route path
+        useEffect(() => {
+            routeLayerRef.current.clearLayers();
+            if (routePath.length > 0) {
+                const latLngs = routePath.map(p => [p.stopLat, p.stopLon]);
+                const polyline = L.polyline(latLngs, { color: '#1a73e8', weight: 5, opacity: 0.7 });
+                routeLayerRef.current.addLayer(polyline);
+                if (mapRef.current && latLngs.length > 0) {
+                    mapRef.current.fitBounds(polyline.getBounds().pad(0.1));
+                }
+            }
+        }, [routePath]);
+
         // Update vehicle markers
         useEffect(() => {
-            const currentMarkers = markersRef.current;
+            const currentMarkers = vehicleMarkersRef.current;
             const displayedVehicleIds = new Set();
 
             vehicles.forEach(vehicle => {
-                const { vehicleId, latitude, longitude, routeName } = vehicle;
-                displayedVehicleIds.add(vehicleId);
+                displayedVehicleIds.add(vehicle.vehicleId);
+                const busIcon = L.divIcon({ className: 'bus-marker', html: `<div>${vehicle.routeName || ''}</div>`, iconSize: [28, 28] });
 
-                const busIcon = L.divIcon({
-                    className: 'bus-marker-container',
-                    html: `<div class="bus-marker"><div class="bus-marker-inner">${routeName || ''}</div></div>`,
-                    iconSize: [32, 32],
-                    iconAnchor: [16, 32]
-                });
-
-                if (currentMarkers[vehicleId]) {
-                    currentMarkers[vehicleId].setLatLng([latitude, longitude]);
+                if (currentMarkers[vehicle.vehicleId]) {
+                    currentMarkers[vehicle.vehicleId].setLatLng([vehicle.lat, vehicle.lon]);
                 } else {
-                    currentMarkers[vehicleId] = L.marker([latitude, longitude], { icon: busIcon }).addTo(mapRef.current);
+                    currentMarkers[vehicle.vehicleId] = L.marker([vehicle.lat, vehicle.lon], { icon: busIcon, zIndexOffset: 1000 })
+                        .addTo(mapRef.current)
+                        .on('click', () => onSelectVehicle(vehicle));
                 }
-                currentMarkers[vehicleId].bindPopup(`<b>Route:</b> ${routeName || 'N/A'}<br><b>Vehicle ID:</b> ${vehicleId}`);
             });
 
-            // Remove markers for vehicles that are no longer in the data
             Object.keys(currentMarkers).forEach(id => {
                 if (!displayedVehicleIds.has(id)) {
-                    if (mapRef.current.hasLayer(currentMarkers[id])) {
-                        currentMarkers[id].remove();
-                    }
+                    currentMarkers[id].remove();
                     delete currentMarkers[id];
                 }
             });
-
-        }, [vehicles]);
-
-        // Draw selected route path and stops
-        useEffect(() => {
-            if (routeLayerRef.current) {
-                routeLayerRef.current.clearLayers();
-            } else {
-                routeLayerRef.current = L.layerGroup().addTo(mapRef.current);
-            }
-
-            if (routeStops && routeStops.length > 0) {
-                const latLngs = routeStops.map(stop => [stop.stopLat, stop.stopLon]);
-
-                const polyline = L.polyline(latLngs, { color: '#1d4ed8', weight: 5, opacity: 0.8 }).addTo(routeLayerRef.current);
-                mapRef.current.fitBounds(polyline.getBounds().pad(0.1));
-
-                routeStops.forEach(stop => {
-                    const stopIcon = L.divIcon({ className: 'stop-marker-icon', iconSize: [10, 10] });
-                    L.marker([stop.stopLat, stop.stopLon], { icon: stopIcon })
-                        .bindPopup(`<b>${stop.stopName}</b>`)
-                        .addTo(routeLayerRef.current);
-                });
-            }
-        }, [routeStops]);
+        }, [vehicles, onSelectVehicle]);
 
         return <div id="map" className="h-full w-full z-0"></div>;
     };
 
     ReactDOM.render(<App />, document.getElementById('root'));
 </script>
-
 </body>
 </html>
 

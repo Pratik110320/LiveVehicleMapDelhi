@@ -1,8 +1,6 @@
 package com.spring.Live.Vehicle.Map.Delhi.controller;
 
-import com.spring.Live.Vehicle.Map.Delhi.model.FareAttributeDto;
-import com.spring.Live.Vehicle.Map.Delhi.model.RouteDto;
-import com.spring.Live.Vehicle.Map.Delhi.model.StopDto;
+import com.spring.Live.Vehicle.Map.Delhi.model.*;
 import com.spring.Live.Vehicle.Map.Delhi.service.GtfsStaticService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -22,25 +20,45 @@ public class GtfsController {
         this.gtfsStaticService = gtfsStaticService;
     }
 
-    // Endpoint to get all routes
     @GetMapping("/routes")
-    public Collection<RouteDto> getAllRoutes() {
-        return gtfsStaticService.getAllRoutes();
+    public Collection<RouteDto> getActiveRoutes() {
+        return gtfsStaticService.getActiveRoutes();
     }
 
-    // Endpoint to get all stops for a specific route
+    @GetMapping("/stops/all")
+    public Collection<StopDto> getAllStops() {
+        return gtfsStaticService.getAllStops();
+    }
+
     @GetMapping("/routes/{routeId}/stops")
     public List<StopDto> getStopsByRoute(@PathVariable String routeId) {
         return gtfsStaticService.getStopsByRouteId(routeId);
     }
 
-    // Endpoint to search for stops by name
+    /**
+     * Returns an ordered list of stops representing the path for a given route.
+     * This is used to draw the polyline on the map.
+     */
+    @GetMapping("/routes/{routeId}/path")
+    public List<StopDto> getRoutePath(@PathVariable String routeId) {
+        return gtfsStaticService.getStopsByRouteId(routeId);
+    }
+
+    @GetMapping("/stops/{stopId}/routes")
+    public List<RouteDto> getRoutesForStop(@PathVariable String stopId) {
+        return gtfsStaticService.getRoutesForStop(stopId);
+    }
+
+    @GetMapping("/trips/{tripId}/schedule")
+    public List<ScheduleItemDto> getTripSchedule(@PathVariable String tripId) {
+        return gtfsStaticService.getScheduleForTrip(tripId);
+    }
+
     @GetMapping("/stops/search")
     public List<StopDto> searchStops(@RequestParam("q") String query) {
         return gtfsStaticService.searchStopsByName(query);
     }
 
-    // Endpoint to calculate the fare for a trip segment
     @GetMapping("/fare")
     public ResponseEntity<FareAttributeDto> getFare(
             @RequestParam String routeId,
