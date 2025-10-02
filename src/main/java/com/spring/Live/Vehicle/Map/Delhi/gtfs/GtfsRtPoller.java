@@ -58,28 +58,44 @@ public class GtfsRtPoller {
                     vehicleCount++;
                     GtfsRealtime.VehiclePosition vp = entity.getVehicle();
                     VehicleDto v = new VehicleDto();
+
                     String vehicleId = vp.hasVehicle() && vp.getVehicle().hasId() ? vp.getVehicle().getId() : null;
                     v.setVehicleId(vehicleId);
-                    v.setTripId(vp.hasTrip() ? vp.getTrip().getTripId() : null);
-                    v.setRouteId(vp.hasTrip() && vp.getTrip().hasRouteId() ? vp.getTrip().getRouteId() : null);
+
+                    // ** NEW: Improved logic to find route information **
+                    String tripId = null;
+                    String routeId = null;
+
+                    if (vp.hasTrip()) {
+                        GtfsRealtime.TripDescriptor trip = vp.getTrip();
+                        tripId = trip.hasTripId() ? trip.getTripId() : null;
+                        // Prioritize route_id from the realtime feed if it exists, as trip_id may not match static data
+                        routeId = trip.hasRouteId() ? trip.getRouteId() : null;
+                    }
+                    v.setTripId(tripId);
+
+                    // If routeId was not in the realtime feed, fall back to looking it up from static data using tripId
+                    if (routeId == null && tripId != null) {
+                        routeId = staticService.getRouteIdForTrip(tripId);
+                    }
+
+                    // Now that we have the best possible routeId, find the route name
+                    if (routeId != null) {
+                        v.setRouteId(routeId);
+                        String routeName = staticService.getRouteNameForRoute(routeId);
+                        if (routeName != null && !routeName.isBlank()) {
+                            v.setRouteName(routeName);
+                        } else {
+                            // Fallback if the route name is missing but we have an ID
+                            v.setRouteName("Route " + routeId);
+                        }
+                    }
+
                     v.setLat(vp.hasPosition() ? vp.getPosition().getLatitude() : 0.0);
                     v.setLon(vp.hasPosition() ? vp.getPosition().getLongitude() : 0.0);
                     v.setSpeed(vp.hasPosition() ? vp.getPosition().getSpeed() : 0.0);
                     v.setTimestamp(vp.hasTimestamp() ? vp.getTimestamp() : Instant.now().getEpochSecond());
 
-                    if (v.getTripId() != null) {
-                        String routeId = staticService.getRouteIdForTrip(v.getTripId());
-                        if (routeId != null) {
-                            v.setRouteId(routeId);
-                            String routeName = staticService.getRouteNameForRoute(routeId);
-                            // ** FEATURE ENHANCEMENT: Create a fallback route name if the full name is missing. **
-                            if (routeName != null && !routeName.isBlank()) {
-                                v.setRouteName(routeName);
-                            } else {
-                                v.setRouteName("Route " + routeId); // e.g., "Route 76"
-                            }
-                        }
-                    }
                     store.save(v);
                 }
             }
@@ -89,4 +105,3 @@ public class GtfsRtPoller {
         }
     }
 }
-

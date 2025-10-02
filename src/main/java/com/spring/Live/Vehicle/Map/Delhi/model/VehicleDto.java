@@ -10,7 +10,8 @@ public class VehicleDto {
     private double lon;
     private double speed;
     private Long timestamp;
-
+    private String occupancyStatus;
+    private String vehicleCategory;
 
     public VehicleDto() {}
 
@@ -32,4 +33,11 @@ public class VehicleDto {
     public void setSpeed(double speed) { this.speed = speed; }
     public Long getTimestamp() { return timestamp; }
     public void setTimestamp(Long timestamp) { this.timestamp = timestamp; }
+    public String getOccupancyStatus() { return occupancyStatus; }
+    public void setOccupancyStatus(String occupancyStatus) { this.occupancyStatus = occupancyStatus; }
+    public String getVehicleCategory() { return vehicleCategory; }
+    public void setVehicleCategory(String vehicleCategory) { this.vehicleCategory = vehicleCategory; }
+
+
 }
+

@@ -38,7 +38,6 @@ public class VehiclesController {
         return ResponseEntity.ok(staticService.getAllStops());
     }
 
-    // ** NEW FEATURE: Endpoints for all new static data types **
     @GetMapping("/agencies")
     public ResponseEntity<List<AgencyDto>> agencies() {
         return ResponseEntity.ok(staticService.getAllAgencies());
@@ -49,10 +48,7 @@ public class VehiclesController {
         return ResponseEntity.ok(staticService.getAllCalendars());
     }
 
-    @GetMapping("/fare-attributes")
-    public ResponseEntity<List<FareAttributeDto>> fareAttributes() {
-        return ResponseEntity.ok(staticService.getAllFareAttributes());
-    }
+    // ** REMOVED: Endpoint that returned all fare attributes, causing memory error **
 
     @GetMapping("/fare-rules/{routeId}")
     public ResponseEntity<List<FareRuleDto>> fareRules(@PathVariable String routeId) {
@@ -67,6 +63,26 @@ public class VehiclesController {
         }
         return ResponseEntity.ok(stopTimes);
     }
+
+    @GetMapping("/route-stops/{tripId}")
+    public ResponseEntity<List<StopDto>> getRouteStops(@PathVariable String tripId) {
+        List<StopDto> stops = staticService.getRouteStopsForTrip(tripId);
+        if (stops.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(stops);
+    }
+
+    // ** NEW: Endpoint to get specific fares for a route **
+    @GetMapping("/fares/{routeId}")
+    public ResponseEntity<List<FareAttributeDto>> getFaresForRoute(@PathVariable String routeId) {
+        List<FareAttributeDto> fares = staticService.getFareAttributesForRoute(routeId);
+        if (fares.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(fares);
+    }
+
 
     @GetMapping("/status")
     public ResponseEntity<?> status() {

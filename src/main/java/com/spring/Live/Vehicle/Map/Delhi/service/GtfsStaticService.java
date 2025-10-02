@@ -18,8 +18,10 @@ import java.io.InputStreamReader;
 import java.io.Reader;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
@@ -34,8 +36,9 @@ public class GtfsStaticService {
     private final Map<String, AgencyDto> agencyMap = new ConcurrentHashMap<>();
     private final Map<String, CalendarDto> calendarMap = new ConcurrentHashMap<>();
     private final Map<String, FareAttributeDto> fareAttributeMap = new ConcurrentHashMap<>();
-    private final Map<String, FareRuleDto> fareRuleMap = new ConcurrentHashMap<>();
-    private final List<StopTimeDto> stopTimes = new ArrayList<>();
+    // ** OPTIMIZATION: Use maps for efficient lookups instead of large lists **
+    private final Map<String, List<FareRuleDto>> fareRulesByRoute = new ConcurrentHashMap<>();
+    private final Map<String, List<StopTimeDto>> stopTimesByTrip = new ConcurrentHashMap<>();
 
 
     @PostConstruct
@@ -50,24 +53,20 @@ public class GtfsStaticService {
         loadData("stops.txt", this::parseStop);
     }
 
-    // ** NEW: Smart loading logic for both local and Docker environments **
     private InputStream getInputStreamForFile(String fileName) throws IOException {
-        // For Render/Docker deployment, check for files in the path created by the Dockerfile
         File dockerFile = new File("/app/static/" + fileName);
         if (dockerFile.exists()) {
             log.info("Loading GTFS data for '{}' from Docker volume.", fileName);
             return new FileInputStream(dockerFile);
         }
-        // For local development, fall back to the classpath
         log.info("Loading GTFS data for '{}' from classpath.", fileName);
         return new ClassPathResource("static/" + fileName).getInputStream();
     }
 
 
     private void loadData(String fileName, CSVRecordProcessor processor) {
-        // Use the new smart loader
         try (Reader reader = new InputStreamReader(getInputStreamForFile(fileName));
-             CSVParser csvParser = new CSVParser(reader, CSVFormat.DEFAULT.withFirstRecordAsHeader())) {
+             CSVParser csvParser = new CSVParser(reader, CSVFormat.DEFAULT.withFirstRecordAsHeader().withTrim().withIgnoreEmptyLines())) {
             for (CSVRecord record : csvParser) {
                 processor.process(record);
             }
@@ -107,7 +106,6 @@ public class GtfsStaticService {
         fare.setPrice(new BigDecimal(record.get("price")));
         fare.setCurrencyType(record.get("currency_type"));
         fare.setPaymentMethod(Integer.parseInt(record.get("payment_method")));
-        // Handle potential empty transfers field
         String transfers = record.get("transfers");
         fare.setTransfers(transfers != null && !transfers.isEmpty() ? Integer.parseInt(transfers) : 0);
         fareAttributeMap.put(fare.getFareId(), fare);
@@ -116,8 +114,13 @@ public class GtfsStaticService {
     private void parseFareRule(CSVRecord record) {
         FareRuleDto rule = new FareRuleDto();
         rule.setFareId(record.get("fare_id"));
-        rule.setRouteId(record.get("route_id"));
-        fareRuleMap.put(rule.getFareId(), rule);
+        String routeId = record.get("route_id");
+        rule.setRouteId(routeId);
+        rule.setOrigin_id(record.get("origin_id"));
+        rule.setDestination_id(record.get("destination_id"));
+        if (routeId != null && !routeId.isEmpty()) {
+            fareRulesByRoute.computeIfAbsent(routeId, k -> new ArrayList<>()).add(rule);
+        }
     }
 
     private void parseStopTime(CSVRecord record) {
@@ -127,7 +130,7 @@ public class GtfsStaticService {
         stopTime.setDepartureTime(record.get("departure_time"));
         stopTime.setStopId(record.get("stop_id"));
         stopTime.setStopSequence(Integer.parseInt(record.get("stop_sequence")));
-        stopTimes.add(stopTime);
+        stopTimesByTrip.computeIfAbsent(stopTime.getTripId(), k -> new ArrayList<>()).add(stopTime);
     }
 
     private void parseTrip(CSVRecord record) {
@@ -147,21 +150,41 @@ public class GtfsStaticService {
         stopsMap.put(stop.getStopId(), stop);
     }
 
-
     public String getRouteIdForTrip(String tripId) { return tripToRouteMap.get(tripId); }
     public String getRouteNameForRoute(String routeId) { return routeIdToNameMap.get(routeId); }
     public List<StopDto> getAllStops() { return new ArrayList<>(stopsMap.values()); }
     public List<AgencyDto> getAllAgencies() { return new ArrayList<>(agencyMap.values()); }
     public List<CalendarDto> getAllCalendars() { return new ArrayList<>(calendarMap.values()); }
-    public List<FareAttributeDto> getAllFareAttributes() { return new ArrayList<>(fareAttributeMap.values()); }
+
+    // ** REMOVED: Method to get ALL fare attributes to prevent memory issues **
+
     public List<FareRuleDto> getFareRulesForRoute(String routeId) {
-        return fareRuleMap.values().stream()
-                .filter(rule -> routeId.equals(rule.getRouteId()))
-                .collect(Collectors.toList());
+        return fareRulesByRoute.getOrDefault(routeId, List.of());
     }
     public List<StopTimeDto> getStopTimesForTrip(String tripId) {
-        return stopTimes.stream()
-                .filter(st -> tripId.equals(st.getTripId()))
+        return stopTimesByTrip.getOrDefault(tripId, List.of()).stream()
+                .sorted(Comparator.comparingInt(StopTimeDto::getStopSequence))
+                .collect(Collectors.toList());
+    }
+
+    public List<StopDto> getRouteStopsForTrip(String tripId) {
+        return getStopTimesForTrip(tripId).stream()
+                .map(stopTime -> stopsMap.get(stopTime.getStopId()))
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+    }
+
+    // ** NEW: Method to get specific fares for a given route **
+    public List<FareAttributeDto> getFareAttributesForRoute(String routeId) {
+        List<FareRuleDto> rules = getFareRulesForRoute(routeId);
+        if (rules.isEmpty()) {
+            return List.of();
+        }
+        return rules.stream()
+                .map(FareRuleDto::getFareId)
+                .distinct()
+                .map(fareAttributeMap::get)
+                .filter(Objects::nonNull)
                 .collect(Collectors.toList());
     }
 
