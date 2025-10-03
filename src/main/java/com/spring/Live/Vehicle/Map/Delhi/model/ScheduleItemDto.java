@@ -15,6 +15,10 @@ public class ScheduleItemDto {
     private int stopSequence;
 
     public ScheduleItemDto(StopDto stop, StopTimeDto stopTime) {
+        if (stop == null || stopTime == null) {
+            // Prevent NullPointerException if data is inconsistent
+            return;
+        }
         this.stopId = stop.getStopId();
         this.stopName = stop.getStopName();
         this.stopLat = stop.getStopLat();

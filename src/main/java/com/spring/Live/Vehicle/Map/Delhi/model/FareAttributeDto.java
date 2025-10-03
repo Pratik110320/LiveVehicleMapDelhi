@@ -1,12 +1,18 @@
 package com.spring.Live.Vehicle.Map.Delhi.model;
 
+import com.opencsv.bean.CsvBindByName;
 import java.math.BigDecimal;
 
 public class FareAttributeDto {
+    @CsvBindByName(column = "fare_id")
     private String fareId;
+    @CsvBindByName
     private BigDecimal price;
+    @CsvBindByName(column = "currency_type")
     private String currencyType;
+    @CsvBindByName(column = "payment_method")
     private int paymentMethod;
+    @CsvBindByName
     private int transfers;
 
     // Getters and Setters

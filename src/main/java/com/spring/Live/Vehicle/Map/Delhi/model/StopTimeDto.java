@@ -1,10 +1,17 @@
 package com.spring.Live.Vehicle.Map.Delhi.model;
 
+import com.opencsv.bean.CsvBindByName;
+
 public class StopTimeDto {
+    @CsvBindByName(column = "trip_id")
     private String tripId;
+    @CsvBindByName(column = "arrival_time")
     private String arrivalTime;
+    @CsvBindByName(column = "departure_time")
     private String departureTime;
+    @CsvBindByName(column = "stop_id")
     private String stopId;
+    @CsvBindByName(column = "stop_sequence")
     private int stopSequence;
 
     // Getters and Setters

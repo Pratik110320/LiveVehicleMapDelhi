@@ -1,30 +1,25 @@
 package com.spring.Live.Vehicle.Map.Delhi.model;
 
+import com.opencsv.bean.CsvBindByName;
+
 public class FareRuleDto {
+    @CsvBindByName(column = "fare_id")
     private String fareId;
+    @CsvBindByName(column = "route_id")
     private String routeId;
-    private String origin_id;
-    private String destination_id;
+    @CsvBindByName(column = "origin_id")
+    private String originId;
+    @CsvBindByName(column = "destination_id")
+    private String destinationId;
+
     // Getters and Setters
-
-    public String getOrigin_id() {
-        return origin_id;
-    }
-
-    public void setOrigin_id(String origin_id) {
-        this.origin_id = origin_id;
-    }
-
-    public String getDestination_id() {
-        return destination_id;
-    }
-
-    public void setDestination_id(String destination_id) {
-        this.destination_id = destination_id;
-    }
-
     public String getFareId() { return fareId; }
     public void setFareId(String fareId) { this.fareId = fareId; }
     public String getRouteId() { return routeId; }
     public void setRouteId(String routeId) { this.routeId = routeId; }
+    public String getOriginId() { return originId; }
+    public void setOriginId(String originId) { this.originId = originId; }
+    public String getDestinationId() { return destinationId; }
+    public void setDestinationId(String destinationId) { this.destinationId = destinationId; }
 }
+

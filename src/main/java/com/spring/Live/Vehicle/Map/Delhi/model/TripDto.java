@@ -1,10 +1,17 @@
 package com.spring.Live.Vehicle.Map.Delhi.model;
 
+import com.opencsv.bean.CsvBindByName;
+
 public class TripDto {
+    @CsvBindByName(column = "route_id")
     private String routeId;
+    @CsvBindByName(column = "service_id")
     private String serviceId;
+    @CsvBindByName(column = "trip_id")
     private String tripId;
+    @CsvBindByName(column = "trip_headsign")
     private String tripHeadsign;
+    @CsvBindByName(column = "direction_id")
     private int directionId;
 
     // Getters and Setters

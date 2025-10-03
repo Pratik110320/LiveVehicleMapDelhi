@@ -1,15 +1,27 @@
 package com.spring.Live.Vehicle.Map.Delhi.model;
 
+import com.opencsv.bean.CsvBindByName;
+
 public class CalendarDto {
+    @CsvBindByName(column = "service_id")
     private String serviceId;
+    @CsvBindByName
     private boolean monday;
+    @CsvBindByName
     private boolean tuesday;
+    @CsvBindByName
     private boolean wednesday;
+    @CsvBindByName
     private boolean thursday;
+    @CsvBindByName
     private boolean friday;
+    @CsvBindByName
     private boolean saturday;
+    @CsvBindByName
     private boolean sunday;
+    @CsvBindByName(column = "start_date")
     private String startDate;
+    @CsvBindByName(column = "end_date")
     private String endDate;
 
     // Getters and Setters

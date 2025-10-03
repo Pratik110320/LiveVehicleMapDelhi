@@ -10,11 +10,9 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-/**
- * Service to manage and broadcast messages to connected SSE clients.
- */
 @Service
 public class NotificationService {
 
@@ -24,44 +22,54 @@ public class NotificationService {
 
     public void addEmitter(SseEmitter emitter) {
         emitters.add(emitter);
+        log.info("Added SSE emitter. total={}", emitters.size());
     }
 
     public void removeEmitter(SseEmitter emitter) {
-        emitters.remove(emitter);
+        boolean removed = emitters.remove(emitter);
+        if (removed) {
+            log.info("Removed SSE emitter. total={}", emitters.size());
+        }
     }
 
-    /**
-     * Sends the list of vehicle data to all connected SSE clients.
-     *
-     * @param vehicles The list of vehicle DTOs to send.
-     */
     public void sendVehicleUpdate(List<VehicleDto> vehicles) {
         String jsonData;
         try {
-            jsonData = objectMapper.writeValueAsString(vehicles);
+            Map<String, Object> eventData = Map.of("type", "vehicles", "payload", vehicles);
+            jsonData = objectMapper.writeValueAsString(eventData);
         } catch (JsonProcessingException e) {
             log.error("Error serializing vehicle data for SSE", e);
             return;
         }
 
-        SseEmitter.SseEventBuilder event = SseEmitter.event()
-                .data(jsonData)
-                .name("message");
+        // Send as unnamed event so browser `EventSource.onmessage` receives it
+        SseEmitter.SseEventBuilder event = SseEmitter.event().data(jsonData);
+        sendToAllEmitters(event);
+    }
 
+    public void sendHeartbeat() {
+        SseEmitter.SseEventBuilder event = SseEmitter.event().name("heartbeat").data("ping");
+        sendToAllEmitters(event);
+    }
+
+    private void sendToAllEmitters(SseEmitter.SseEventBuilder event) {
         for (SseEmitter emitter : emitters) {
             try {
                 emitter.send(event);
             } catch (IOException e) {
-                log.warn("Error sending to emitter, removing it: {}", e.getMessage());
+                log.warn("Error sending to emitter (will remove). msg={}", e.getMessage());
+                removeEmitter(emitter);
+            } catch (IllegalStateException ise) {
+                // emitter already completed / closed
+                log.debug("Emitter in illegal state (removing). msg={}", ise.getMessage());
+                removeEmitter(emitter);
+            } catch (Exception ex) {
+                log.error("Unexpected error sending SSE event: {}", ex.getMessage(), ex);
                 removeEmitter(emitter);
             }
         }
     }
 
-    /**
-     * Returns the current number of active SSE emitters.
-     * @return The count of connected clients.
-     */
     public int getEmitterCount() {
         return emitters.size();
     }
