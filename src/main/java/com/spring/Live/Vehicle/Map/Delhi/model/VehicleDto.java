@@ -5,7 +5,8 @@ public class VehicleDto {
     private String vehicleId;
     private String tripId;
     private String routeId;
-    private String routeName; // New field for the human-readable route name
+    private String routeName;
+    private String tripHeadsign;
     private double lat;
     private double lon;
     private double speed;
@@ -37,6 +38,7 @@ public class VehicleDto {
     public void setOccupancyStatus(String occupancyStatus) { this.occupancyStatus = occupancyStatus; }
     public String getVehicleCategory() { return vehicleCategory; }
     public void setVehicleCategory(String vehicleCategory) { this.vehicleCategory = vehicleCategory; }
-
+    public String getTripHeadsign() { return tripHeadsign; }
+    public void setTripHeadsign(String tripHeadsign) { this.tripHeadsign = tripHeadsign; }
 
 }

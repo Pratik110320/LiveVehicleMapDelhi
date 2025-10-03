@@ -2,6 +2,7 @@ package com.spring.Live.Vehicle.Map.Delhi.gtfs;
 
 import com.google.transit.realtime.GtfsRealtime;
 import com.spring.Live.Vehicle.Map.Delhi.model.RouteDto;
+import com.spring.Live.Vehicle.Map.Delhi.model.TripDto;
 import com.spring.Live.Vehicle.Map.Delhi.model.VehicleDto;
 import com.spring.Live.Vehicle.Map.Delhi.service.GtfsStaticService;
 import com.spring.Live.Vehicle.Map.Delhi.service.NotificationService;
@@ -11,17 +12,19 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 @Component
+@EnableScheduling
 public class GtfsRtPoller {
 
     private static final Logger log = LoggerFactory.getLogger(GtfsRtPoller.class);
@@ -34,13 +37,16 @@ public class GtfsRtPoller {
     private String gtfsRtUrl;
 
     @Autowired
-    public GtfsRtPoller(VehicleStoreService vehicleStoreService, GtfsStaticService gtfsStaticService, NotificationService notificationService, WebClient.Builder webClientBuilder) {
+    public GtfsRtPoller(VehicleStoreService vehicleStoreService,
+                        GtfsStaticService gtfsStaticService,
+                        NotificationService notificationService,
+                        WebClient webClient) { // Inject the configured WebClient bean
         this.vehicleStoreService = vehicleStoreService;
         this.gtfsStaticService = gtfsStaticService;
         this.notificationService = notificationService;
-        this.webClient = webClientBuilder.build();
+        this.webClient = webClient;
     }
-    // (Only the changed/added parts shown; paste into your file replacing poll() and processFeed())
+
     @Scheduled(fixedRateString = "${otd.realtime.poll.ms:15000}")
     public void poll() {
         if (gtfsRtUrl == null || gtfsRtUrl.isBlank()) {
@@ -48,7 +54,7 @@ public class GtfsRtPoller {
             return;
         }
 
-        log.debug("Polling GTFS-RT feed from {}", gtfsRtUrl);
+        log.info("Polling GTFS-RT feed from {}", gtfsRtUrl);
 
         webClient.get()
                 .uri(gtfsRtUrl)
@@ -56,10 +62,8 @@ public class GtfsRtPoller {
                 .retrieve()
                 .bodyToMono(byte[].class)
                 .flatMap(this::processFeed)
-                .doOnError(error -> {
-                    log.error("Error polling or processing GTFS-RT feed: {}", error.getMessage(), error);
-                })
-                .onErrorResume(e -> Mono.empty())
+                .doOnError(error -> log.error("Error polling or processing GTfs-RT feed: {}", error.getMessage(), error))
+                .onErrorResume(e -> Mono.empty()) // Don't stop scheduling on error
                 .subscribe();
     }
 
@@ -72,104 +76,58 @@ public class GtfsRtPoller {
 
             try {
                 GtfsRealtime.FeedMessage feed = GtfsRealtime.FeedMessage.parseFrom(feedBytes);
-                int entityCount = feed.getEntityCount();
-                log.debug("Parsed feed with {} entities (bytes={})", entityCount, feedBytes.length);
+                log.info("Parsed feed with {} entities.", feed.getEntityCount());
 
-                List<VehicleDto> updatedVehicles = new ArrayList<>();
-                Map<String, RouteDto> routes = gtfsStaticService.getRoutes();
+                List<VehicleDto> updatedVehicles = feed.getEntityList().stream()
+                        .map(this::createVehicleDto)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toList());
 
-                for (GtfsRealtime.FeedEntity entity : feed.getEntityList()) {
-                    try {
-                        // Ensure we have any vehicle info
-                        if (!entity.hasVehicle()) {
-                            log.trace("Entity {} has no vehicle; skipping", entity.getId());
-                            continue;
-                        }
-
-                        GtfsRealtime.VehiclePosition vehicle = entity.getVehicle();
-
-                        if (!vehicle.hasPosition() || !vehicle.hasTrip()) {
-                            log.trace("Vehicle missing position or trip for entity {}. pos={} trip={}",
-                                    entity.getId(), vehicle.hasPosition(), vehicle.hasTrip());
-                            continue;
-                        }
-
-                        // Fallback for vehicle id: try VehicleDescriptor.id then entity.id
-                        String vehicleId = null;
-                        if (vehicle.hasVehicle() && vehicle.getVehicle().hasId()) {
-                            vehicleId = vehicle.getVehicle().getId();
-                        }
-                        if (vehicleId == null || vehicleId.isBlank()) {
-                            // fallback to feed entity id
-                            vehicleId = entity.getId();
-                        }
-                        if (vehicleId == null || vehicleId.isBlank()) {
-                            log.warn("Could not determine vehicle id for entity {}; skipping", entity.getId());
-                            continue;
-                        }
-
-                        double lat = vehicle.getPosition().getLatitude();
-                        double lon = vehicle.getPosition().getLongitude();
-
-                        VehicleDto newVehicleDto = new VehicleDto();
-                        newVehicleDto.setVehicleId(vehicleId);
-                        newVehicleDto.setLat(lat);
-                        newVehicleDto.setLon(lon);
-                        if (vehicle.getPosition().hasSpeed()) newVehicleDto.setSpeed(vehicle.getPosition().getSpeed());
-                        if (vehicle.hasTimestamp()) newVehicleDto.setTimestamp(vehicle.getTimestamp());
-                        if (vehicle.getTrip().hasTripId()) newVehicleDto.setTripId(vehicle.getTrip().getTripId());
-
-                        String routeId = vehicle.getTrip().hasRouteId() ? vehicle.getTrip().getRouteId() : null;
-                        newVehicleDto.setRouteId(routeId);
-                        if (routeId != null) {
-                            RouteDto route = routes.get(routeId);
-                            if (route != null) {
-                                String shortName = route.getRouteShortName();
-                                String longName = route.getRouteLongName();
-                                newVehicleDto.setRouteName(shortName != null && !shortName.isBlank() ? shortName : longName);
-                            } else {
-                                newVehicleDto.setRouteName(routeId);
-                            }
-                        } else {
-                            newVehicleDto.setRouteName("unknown-route");
-                        }
-
-                        Optional<VehicleDto> existingVehicleOpt = vehicleStoreService.getById(newVehicleDto.getVehicleId());
-                        boolean positionHasChanged = existingVehicleOpt.map(existing ->
-                                Math.abs(existing.getLat() - newVehicleDto.getLat()) > 0.00001 ||
-                                        Math.abs(existing.getLon() - newVehicleDto.getLon()) > 0.00001
-                        ).orElse(true);
-
-                        if (positionHasChanged) {
-                            vehicleStoreService.save(newVehicleDto);
-                            updatedVehicles.add(newVehicleDto);
-                            log.trace("Updated vehicle {} at {},{}", vehicleId, lat, lon);
-                        }
-                    } catch (Exception e) {
-                        log.warn("Error processing entity {}: {}", entity.getId(), e.getMessage(), e);
-                    }
-                }
-
-                int emitterCount = notificationService.getEmitterCount();
+                // Now that we have all vehicles, update the store and notify
                 if (!updatedVehicles.isEmpty()) {
-                    log.info("Poll found {} updated vehicles. Pushing to {} clients.", updatedVehicles.size(), emitterCount);
-                    try {
-                        notificationService.sendVehicleUpdate(updatedVehicles);
-                    } catch (Exception e) {
-                        log.error("Failed to send vehicle update: {}", e.getMessage(), e);
-                    }
+                    updatedVehicles.forEach(vehicleStoreService::save);
+                    notificationService.sendVehicleUpdate(updatedVehicles);
+                    log.info("Processed and sent updates for {} vehicles.", updatedVehicles.size());
                 } else {
-                    log.debug("Poll completed, but no vehicle positions have changed. Emitters={}", emitterCount);
-                    try {
-                        notificationService.sendHeartbeat();
-                    } catch (Exception e) {
-                        log.debug("sendHeartbeat failed: {}", e.getMessage(), e);
-                    }
+                    log.info("No vehicle updates in this poll.");
+                    notificationService.sendHeartbeat();
                 }
+
             } catch (Exception e) {
                 log.error("Failed to parse GTFS-RT feed", e);
             }
         });
     }
 
+
+    private VehicleDto createVehicleDto(GtfsRealtime.FeedEntity entity) {
+        if (!entity.hasVehicle()) return null;
+
+        GtfsRealtime.VehiclePosition vehicle = entity.getVehicle();
+        if (!vehicle.hasPosition() || !vehicle.hasTrip() || !vehicle.hasVehicle()) return null;
+
+        String vehicleId = vehicle.getVehicle().getId();
+        if (vehicleId == null || vehicleId.isBlank()) return null; // We need an ID to track it
+
+        VehicleDto dto = new VehicleDto();
+        dto.setVehicleId(vehicleId);
+        dto.setLat(vehicle.getPosition().getLatitude());
+        dto.setLon(vehicle.getPosition().getLongitude());
+        if (vehicle.getPosition().hasSpeed()) dto.setSpeed(vehicle.getPosition().getSpeed());
+        if (vehicle.hasTimestamp()) dto.setTimestamp(vehicle.getTimestamp());
+
+        GtfsRealtime.TripDescriptor trip = vehicle.getTrip();
+        dto.setTripId(trip.getTripId());
+
+        // Enrich with static data
+        TripDto tripDto = gtfsStaticService.getTripById(trip.getTripId());
+        if (tripDto != null) {
+            dto.setRouteId(tripDto.getRouteId());
+            RouteDto routeDto = gtfsStaticService.getRoutes().get(tripDto.getRouteId());
+            if (routeDto != null) {
+                dto.setRouteName(routeDto.getRouteShortName());
+            }
+        }
+        return dto;
+    }
 }
