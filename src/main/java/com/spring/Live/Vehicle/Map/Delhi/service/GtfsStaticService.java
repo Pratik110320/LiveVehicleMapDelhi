@@ -1,7 +1,6 @@
 package com.spring.Live.Vehicle.Map.Delhi.service;
 
-import com.opencsv.bean.CsvToBean;
-import com.opencsv.bean.CsvToBeanBuilder;
+import com.opencsv.CSVReader;
 import com.spring.Live.Vehicle.Map.Delhi.model.*;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
@@ -14,15 +13,20 @@ import org.springframework.stereotype.Service;
 
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.function.Consumer;
-import java.util.function.Function;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 
 @Service
 public class GtfsStaticService {
 
     private static final Logger log = LoggerFactory.getLogger(GtfsStaticService.class);
+    private final DateTimeFormatter tf = DateTimeFormatter.ofPattern("H:mm:ss");
 
     @Autowired
     private ResourceLoader resourceLoader;
@@ -30,87 +34,162 @@ public class GtfsStaticService {
     @Value("${gtfs.static.data.location}")
     private String gtfsDataLocation;
 
-    private Map<String, AgencyDto> agencies;
-    private Map<String, RouteDto> routes;
-    private Map<String, TripDto> trips;
-    private Map<String, StopDto> stops;
-    private Map<String, List<StopTimeDto>> stopTimesByTripId;
-    private Map<String, FareRuleDto> fareRulesMap;
-    private Map<String, FareAttributeDto> fareAttributes;
-    private Map<String, CalendarDto> calendars;
-    private Map<String, List<RouteDto>> routesByStopId;
-    private Set<String> activeServiceIds;
+    // --- In-Memory Data Stores ---
+    private final Map<String, AgencyDto> agencies = new ConcurrentHashMap<>();
+    private final Map<String, RouteDto> routes = new ConcurrentHashMap<>();
+    private final Map<String, TripDto> trips = new ConcurrentHashMap<>();
+    private final Map<String, StopDto> stops = new ConcurrentHashMap<>();
+    private final Map<String, FareAttributeDto> fareAttributes = new ConcurrentHashMap<>();
+    private final Map<String, CalendarDto> calendars = new ConcurrentHashMap<>();
+    private final Map<LocalDate, List<CalendarDateDto>> calendarExceptions = new ConcurrentHashMap<>();
 
-    private String cleanId(String id) {
-        if (id == null) return null;
-        if (id.startsWith("\uFEFF")) id = id.substring(1);
-        return id.trim();
-    }
+
+    // --- Memory-Optimized Lookups for Large Files ---
+    private final Map<String, List<StopTimeDto>> stopTimesByTripId = new ConcurrentHashMap<>();
+    private final Map<String, FareRuleDto> fareRulesMap = new ConcurrentHashMap<>();
+    private final Map<String, List<RouteDto>> routesByStopId = new ConcurrentHashMap<>();
+    private final Map<String, Set<String>> tripsByStopId = new ConcurrentHashMap<>();
+
+    private Set<String> activeServiceIds;
 
     @PostConstruct
     public void loadGtfsData() {
         log.info("Loading GTFS static data from: {}", gtfsDataLocation);
-        agencies = loadCsvDataToMap("agency.txt", AgencyDto.class, AgencyDto::getAgencyId);
-        routes = loadCsvDataToMap("routes.txt", RouteDto.class, RouteDto::getRouteId);
-        trips = loadCsvDataToMap("trips.txt", TripDto.class, TripDto::getTripId);
-        stops = loadCsvDataToMap("stops.txt", StopDto.class, StopDto::getStopId);
-        fareAttributes = loadCsvDataToMap("fare_attribute_mini.txt", FareAttributeDto.class, FareAttributeDto::getFareId);
-        calendars = loadCsvDataToMap("calendar.txt", CalendarDto.class, CalendarDto::getServiceId);
+        try {
+            // Load smaller files first
+            streamCsvFile("agency.txt", this::processAgencyRow);
+            streamCsvFile("calendar.txt", this::processCalendarRow);
+            streamCsvFile("calendar_dates.txt", this::processCalendarDateRow);
+            streamCsvFile("routes.txt", this::processRouteRow);
+            streamCsvFile("stops.txt", this::processStopRow);
+            streamCsvFile("fare_attribute_mini.txt", this::processFareAttributeRow);
 
-        // Stream-process the largest files to avoid OutOfMemoryError
-        processFareRules();
-        processStopTimes();
+            // Load trips before stop_times and fare_rules which depend on them
+            streamCsvFile("trips.txt", this::processTripRow);
 
-        // Pre-calculate which routes serve which stops for fast lookups
-        buildStopToRouteLookup();
+            // Stream and process the largest files last
+            streamCsvFile("stop_times.txt", this::processStopTimeRow);
+            streamCsvFile("fare_rules.txt", this::processFareRuleRow);
 
-        this.activeServiceIds = determineActiveServiceIds();
-        log.info("Found {} active service IDs for today.", this.activeServiceIds.size());
+            // Post-processing: Build caches and link data
+            buildStopToRouteLookup();
+            this.activeServiceIds = determineActiveServiceIds();
+
+            log.info("GTFS data loading complete. Found {} active service IDs for today.", this.activeServiceIds.size());
+
+        } catch (Exception e) {
+            log.error("Failed to load GTFS static data. The application might not function correctly.", e);
+        }
     }
 
-    /**
-     * Streams fare_rules.txt row by row to build the fareRulesMap efficiently.
-     */
-    private void processFareRules() {
-        this.fareRulesMap = new HashMap<>();
-        streamCsvData("fare_rules.txt", FareRuleDto.class, rule -> {
-            if (rule.getRouteId() != null && rule.getOriginId() != null && rule.getDestinationId() != null) {
-                String key = String.join(":", cleanId(rule.getRouteId()), cleanId(rule.getOriginId()), cleanId(rule.getDestinationId()));
-                fareRulesMap.putIfAbsent(key, rule);
-            }
-        });
-        log.info("Processed {} fare rules into a lookup map.", fareRulesMap.size());
+    //region CSV Row Processors
+    private void processAgencyRow(String[] headers, String[] row) {
+        AgencyDto agency = new AgencyDto();
+        agency.setAgencyId(getString(row, 0));
+        agency.setAgencyName(getString(row, 1));
+        agencies.put(agency.getAgencyId(), agency);
     }
 
-    /**
-     * Streams stop_times.txt row by row to build the stopTimesByTripId map efficiently.
-     */
-    private void processStopTimes() {
-        this.stopTimesByTripId = new HashMap<>();
-        streamCsvData("stop_times.txt", StopTimeDto.class, st -> {
-            String tripId = cleanId(st.getTripId());
-            if (tripId != null && !tripId.isBlank()) {
-                stopTimesByTripId.computeIfAbsent(tripId, k -> new ArrayList<>()).add(st);
-            }
-        });
-        log.info("Processed stop_times records into a lookup map with {} trip IDs.", stopTimesByTripId.size());
+    private void processCalendarRow(String[] headers, String[] row) {
+        CalendarDto calendar = new CalendarDto();
+        calendar.setServiceId(getString(row, 0));
+        calendar.setMonday("1".equals(getString(row, 1)));
+        calendar.setTuesday("1".equals(getString(row, 2)));
+        calendar.setWednesday("1".equals(getString(row, 3)));
+        calendar.setThursday("1".equals(getString(row, 4)));
+        calendar.setFriday("1".equals(getString(row, 5)));
+        calendar.setSaturday("1".equals(getString(row, 6)));
+        calendar.setSunday("1".equals(getString(row, 7)));
+        calendar.setStartDate(getString(row, 8));
+        calendar.setEndDate(getString(row, 9));
+        calendars.put(calendar.getServiceId(), calendar);
     }
+
+    private void processCalendarDateRow(String[] headers, String[] row) {
+        CalendarDateDto exception = new CalendarDateDto();
+        exception.setServiceId(getString(row, 0));
+        exception.setDate(getString(row, 1));
+        exception.setExceptionType(getInt(row, 2));
+        calendarExceptions.computeIfAbsent(exception.getDate(), k -> new ArrayList<>()).add(exception);
+    }
+
+
+    private void processRouteRow(String[] headers, String[] row) {
+        RouteDto route = new RouteDto();
+        route.setRouteId(getString(row, 0));
+        route.setAgencyId(getString(row, 1));
+        route.setRouteShortName(getString(row, 2));
+        route.setRouteLongName(getString(row, 3));
+        routes.put(route.getRouteId(), route);
+    }
+
+    private void processStopRow(String[] headers, String[] row) {
+        StopDto stop = new StopDto();
+        stop.setStopId(getString(row, 0));
+        stop.setStopName(getString(row, 2));
+        stop.setStopLat(getDouble(row, 4));
+        stop.setStopLon(getDouble(row, 5));
+        stops.put(stop.getStopId(), stop);
+    }
+
+    private void processFareAttributeRow(String[] headers, String[] row) {
+        FareAttributeDto fa = new FareAttributeDto();
+        fa.setFareId(getString(row, 0));
+        // Add other fields if needed
+        fareAttributes.put(fa.getFareId(), fa);
+    }
+
+    private void processTripRow(String[] headers, String[] row) {
+        TripDto trip = new TripDto();
+        trip.setRouteId(getString(row, 0));
+        trip.setServiceId(getString(row, 1));
+        trip.setTripId(getString(row, 2));
+        trip.setTripHeadsign(getString(row, 3));
+        trips.put(trip.getTripId(), trip);
+    }
+
+    private void processStopTimeRow(String[] headers, String[] row) {
+        StopTimeDto st = new StopTimeDto();
+        st.setTripId(getString(row, 0));
+        st.setArrivalTime(getString(row, 1));
+        st.setDepartureTime(getString(row, 2));
+        st.setStopId(getString(row, 3));
+        st.setStopSequence(getInt(row, 4));
+        stopTimesByTripId.computeIfAbsent(st.getTripId(), k -> new ArrayList<>()).add(st);
+
+        if (st.getStopId() != null && st.getTripId() != null) {
+            tripsByStopId.computeIfAbsent(st.getStopId(), k -> new HashSet<>()).add(st.getTripId());
+        }
+    }
+
+    private void processFareRuleRow(String[] headers, String[] row) {
+        FareRuleDto rule = new FareRuleDto();
+        rule.setFareId(getString(row, 0));
+        rule.setRouteId(getString(row, 1));
+        rule.setOriginId(getString(row, 2));
+        rule.setDestinationId(getString(row, 3));
+        if (rule.getRouteId() != null && rule.getOriginId() != null && rule.getDestinationId() != null) {
+            String key = String.join(":", rule.getRouteId(), rule.getOriginId(), rule.getDestinationId());
+            fareRulesMap.putIfAbsent(key, rule);
+        }
+    }
+    //endregion
 
     private void buildStopToRouteLookup() {
         Map<String, Set<String>> routeIdsByStopId = new HashMap<>();
         trips.values().forEach(trip -> {
             if (trip != null && trip.getTripId() != null) {
-                List<StopTimeDto> times = stopTimesByTripId.get(cleanId(trip.getTripId()));
+                List<StopTimeDto> times = stopTimesByTripId.get(trip.getTripId());
                 if (times != null) {
                     for (StopTimeDto time : times) {
                         if (time != null && time.getStopId() != null) {
-                            routeIdsByStopId.computeIfAbsent(cleanId(time.getStopId()), k -> new HashSet<>()).add(cleanId(trip.getRouteId()));
+                            routeIdsByStopId.computeIfAbsent(time.getStopId(), k -> new HashSet<>()).add(trip.getRouteId());
                         }
                     }
                 }
             }
         });
-        routesByStopId = new HashMap<>();
+
         routeIdsByStopId.forEach((stopId, routeIds) -> {
             List<RouteDto> routeList = routeIds.stream()
                     .map(routes::get)
@@ -122,107 +201,108 @@ public class GtfsStaticService {
         log.info("Built stop-to-route lookup map for {} stops.", routesByStopId.size());
     }
 
-    /**
-     * Generic utility to stream a CSV file and apply an action to each parsed bean.
-     * This is memory-efficient as it doesn't load the whole file at once.
-     */
-    private <T> void streamCsvData(String fileName, Class<T> type, Consumer<T> consumer) {
-        String fullPath = gtfsDataLocation + fileName;
-        Resource resource = resourceLoader.getResource(fullPath);
-        if (!resource.exists()) {
-            log.warn("GTFS data file not found at path: {}. Skipping.", fullPath);
-            return;
-        }
-        try (InputStreamReader reader = new InputStreamReader(resource.getInputStream(), StandardCharsets.UTF_8)) {
-            CsvToBean<T> csvToBean = new CsvToBeanBuilder<T>(reader)
-                    .withType(type)
-                    .withIgnoreLeadingWhiteSpace(true)
-                    .build();
-            csvToBean.iterator().forEachRemaining(consumer);
-        } catch (Exception e) {
-            log.error("Error streaming data from " + fileName, e);
-        }
-    }
-
-    private <T> Map<String, T> loadCsvDataToMap(String fileName, Class<T> type, Function<T, String> keyExtractor) {
-        Map<String, T> map = new HashMap<>();
-        streamCsvData(fileName, type, bean -> {
-            String key = cleanId(keyExtractor.apply(bean));
-            if (key != null && !key.isBlank()) {
-                map.putIfAbsent(key, bean);
-            }
-        });
-        log.info("Successfully loaded {} records into map from {}", map.size(), fileName);
-        return map;
-    }
-
     private Set<String> determineActiveServiceIds() {
-        if (trips == null || trips.isEmpty()) return Collections.emptySet();
-        return trips.values().stream()
-                .map(trip -> cleanId(trip.getServiceId()))
-                .filter(Objects::nonNull)
-                .collect(Collectors.toSet());
-    }
+        Set<String> activeIds = new HashSet<>();
+        // CRITICAL FIX: Use the agency's timezone to determine the correct date.
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+        log.info("Determining active services for date: {}", today);
 
-    public TripDto getTripById(String tripId) {
-        return trips.get(cleanId(tripId));
-    }
 
-    public Collection<RouteDto> getActiveRoutes() {
-        if (trips == null || activeServiceIds == null) return Collections.emptyList();
-        Set<String> activeRouteIds = trips.values().stream()
-                .filter(trip -> activeServiceIds.contains(cleanId(trip.getServiceId())))
-                .map(trip -> cleanId(trip.getRouteId()))
-                .collect(Collectors.toSet());
-
-        if (activeRouteIds.isEmpty() && routes != null && !routes.isEmpty()) {
-            log.warn("No active routes found. Displaying all available routes as a fallback.");
-            return routes.values();
+        // 1. Regular schedule from calendar.txt
+        for (CalendarDto calendar : calendars.values()) {
+            if (calendar.isActiveOn(today)) {
+                activeIds.add(calendar.getServiceId());
+            }
         }
 
-        return routes.values().stream()
-                .filter(route -> activeRouteIds.contains(cleanId(route.getRouteId())))
-                .collect(Collectors.toList());
+        // 2. Apply exceptions from calendar_dates.txt
+        List<CalendarDateDto> todayExceptions = calendarExceptions.getOrDefault(today, Collections.emptyList());
+        for (CalendarDateDto exception : todayExceptions) {
+            if (exception.getExceptionType() == 1) { // Service added
+                activeIds.add(exception.getServiceId());
+            } else if (exception.getExceptionType() == 2) { // Service removed
+                activeIds.remove(exception.getServiceId());
+            }
+        }
+        return activeIds;
+    }
+
+
+    //region Public Data Accessors
+
+    public Set<String> getActiveServiceIds() {
+        return this.activeServiceIds;
+    }
+
+    public Collection<RouteDto> getAllRoutes() {
+        return routes.values();
+    }
+
+    public RouteDto getRouteById(String routeId) {
+        return routes.get(routeId);
+    }
+
+    public Collection<RouteDto> getActiveRoutes(String query) {
+        Set<String> activeRouteIds = trips.values().stream()
+                .filter(trip -> this.activeServiceIds.contains(trip.getServiceId()))
+                .map(TripDto::getRouteId)
+                .collect(Collectors.toSet());
+
+        var routeStream = routes.values().stream()
+                .filter(route -> activeRouteIds.contains(route.getRouteId()));
+
+        if (query != null && !query.isBlank()) {
+            String qlc = query.toLowerCase();
+            routeStream = routeStream.filter(r -> (r.getRouteLongName() != null && r.getRouteLongName().toLowerCase().contains(qlc)) ||
+                    (r.getRouteShortName() != null && r.getRouteShortName().toLowerCase().contains(qlc)));
+        }
+
+        return routeStream.collect(Collectors.toList());
     }
 
     public Collection<StopDto> getAllStops() {
-        return stops != null ? stops.values() : Collections.emptyList();
+        return stops.values();
+    }
+
+    public StopDto getStopById(String stopId) {
+        return stops.get(stopId);
+    }
+
+    public TripDto getTripById(String tripId) {
+        return trips.get(tripId);
     }
 
     public List<RouteDto> getRoutesForStop(String stopId) {
-        return routesByStopId.getOrDefault(cleanId(stopId), Collections.emptyList());
+        return routesByStopId.getOrDefault(stopId, Collections.emptyList());
     }
 
-    public Map<String, RouteDto> getRoutes() { return routes; }
-    public Map<String, TripDto> getTrips() { return trips; }
-
     public List<StopDto> getStopsByRouteId(String routeId) {
-        final String cleanedRouteId = cleanId(routeId);
         Optional<TripDto> representativeTrip = trips.values().stream()
-                .filter(trip -> cleanedRouteId.equals(cleanId(trip.getRouteId())))
+                .filter(trip -> routeId.equals(trip.getRouteId()))
+                .filter(trip -> this.activeServiceIds.contains(trip.getServiceId()))
                 .findFirst();
 
         if (representativeTrip.isEmpty()) return Collections.emptyList();
 
-        String tripId = cleanId(representativeTrip.get().getTripId());
+        String tripId = representativeTrip.get().getTripId();
         List<StopTimeDto> stopTimesForTrip = new ArrayList<>(stopTimesByTripId.getOrDefault(tripId, Collections.emptyList()));
         stopTimesForTrip.sort(Comparator.comparingInt(StopTimeDto::getStopSequence));
 
         return stopTimesForTrip.stream()
-                .map(stopTime -> stops.get(cleanId(stopTime.getStopId())))
+                .map(stopTime -> stops.get(stopTime.getStopId()))
                 .filter(Objects::nonNull)
                 .collect(Collectors.toList());
     }
 
     public List<ScheduleItemDto> getScheduleForTrip(String tripId) {
-        List<StopTimeDto> stopTimesForTrip = stopTimesByTripId.get(cleanId(tripId));
+        List<StopTimeDto> stopTimesForTrip = stopTimesByTripId.get(tripId);
         if (stopTimesForTrip == null || stopTimesForTrip.isEmpty()) return Collections.emptyList();
 
         stopTimesForTrip.sort(Comparator.comparingInt(StopTimeDto::getStopSequence));
 
         return stopTimesForTrip.stream()
                 .map(stopTime -> {
-                    StopDto stop = stops.get(cleanId(stopTime.getStopId()));
+                    StopDto stop = stops.get(stopTime.getStopId());
                     return stop != null ? new ScheduleItemDto(stop, stopTime) : null;
                 })
                 .filter(Objects::nonNull)
@@ -239,12 +319,127 @@ public class GtfsStaticService {
     }
 
     public FareAttributeDto getFare(String routeId, String fromStopId, String toStopId) {
-        String key = String.join(":", cleanId(routeId), cleanId(fromStopId), cleanId(toStopId));
+        String key = String.join(":", routeId, fromStopId, toStopId);
         FareRuleDto matchingRule = fareRulesMap.get(key);
         if (matchingRule != null) {
-            return fareAttributes.get(cleanId(matchingRule.getFareId()));
+            return fareAttributes.get(matchingRule.getFareId());
         }
         return null;
     }
+
+    public List<StopTimeDto> getArrivals(String stopId, String fromTimeStr, String toTimeStr) {
+        Set<String> tripIdsForStop = tripsByStopId.getOrDefault(stopId, Collections.emptySet());
+        if (tripIdsForStop.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<StopTimeDto> arrivals = tripIdsForStop.stream()
+                .map(this::getTripById)
+                .filter(Objects::nonNull)
+                .filter(trip -> this.activeServiceIds.contains(trip.getServiceId()))
+                .flatMap(trip -> stopTimesByTripId.getOrDefault(trip.getTripId(), Collections.emptyList()).stream())
+                .filter(st -> stopId.equals(st.getStopId()))
+                .collect(Collectors.toList());
+
+        Comparator<StopTimeDto> byArrivalTime = Comparator.comparing(st -> {
+            try {
+                String time = st.getArrivalTime();
+                if (time != null && time.startsWith("24:")) {
+                    time = "00" + time.substring(2);
+                } else if (time != null && time.startsWith("25:")) {
+                    time = "01" + time.substring(2);
+                }
+                return LocalTime.parse(time, tf);
+            } catch (Exception e) {
+                return LocalTime.MAX;
+            }
+        });
+
+        if ((fromTimeStr == null || fromTimeStr.isEmpty()) && (toTimeStr == null || toTimeStr.isEmpty())) {
+            return arrivals.stream().sorted(byArrivalTime).collect(Collectors.toList());
+        }
+
+        LocalTime from = fromTimeStr == null ? LocalTime.MIN : LocalTime.parse(fromTimeStr, tf);
+        LocalTime to = toTimeStr == null ? LocalTime.MAX : LocalTime.parse(toTimeStr, tf);
+
+        return arrivals.stream()
+                .filter(st -> {
+                    try {
+                        String timeStr = st.getArrivalTime();
+                        if (timeStr != null && timeStr.startsWith("24:")) {
+                            timeStr = "00" + timeStr.substring(2);
+                        } else if (timeStr != null && timeStr.startsWith("25:")) {
+                            timeStr = "01" + timeStr.substring(2);
+                        }
+                        LocalTime arr = LocalTime.parse(timeStr, tf);
+                        return !arr.isBefore(from) && !arr.isAfter(to);
+                    } catch (Exception e) {
+                        return false;
+                    }
+                })
+                .sorted(byArrivalTime)
+                .collect(Collectors.toList());
+    }
+
+    //endregion
+
+    //region CSV Streaming Utility
+    private void streamCsvFile(String fileName, BiConsumer<String[], String[]> rowProcessor) throws Exception {
+        String fullPath = gtfsDataLocation + fileName;
+        Resource resource = resourceLoader.getResource(fullPath);
+        if (!resource.exists()) {
+            log.warn("GTFS data file not found at path: {}. Skipping.", fullPath);
+            return;
+        }
+
+        log.info("Streaming GTFS data from: {}", fileName);
+        long rowCount = 0;
+        try (CSVReader csvReader = new CSVReader(new InputStreamReader(resource.getInputStream(), StandardCharsets.UTF_8))) {
+            String[] headers = csvReader.readNext();
+            if (headers == null) {
+                log.warn("Empty CSV file: {}", fileName);
+                return;
+            }
+            String[] row;
+            while ((row = csvReader.readNext()) != null) {
+                try {
+                    rowProcessor.accept(headers, row);
+                    rowCount++;
+                } catch (Exception e) {
+                    log.debug("Error processing row {} in {}: {}", rowCount, fileName, e.getMessage());
+                }
+            }
+        }
+        log.info("Successfully streamed {} data rows from {}", rowCount, fileName);
+    }
+
+    private String getString(String[] row, int index) {
+        if (row != null && index < row.length) {
+            // Remove BOM character if present at the beginning of the first column
+            if (index == 0 && row[index] != null && row[index].startsWith("\uFEFF")) {
+                return row[index].substring(1);
+            }
+            return row[index];
+        }
+        return null;
+    }
+
+
+    private double getDouble(String[] row, int index) {
+        try {
+            return (row != null && index < row.length) ? Double.parseDouble(row[index]) : 0.0;
+        } catch (NumberFormatException | NullPointerException e) {
+            return 0.0;
+        }
+    }
+
+    private int getInt(String[] row, int index) {
+        try {
+            return (row != null && index < row.length) ? Integer.parseInt(row[index]) : 0;
+        } catch (NumberFormatException | NullPointerException e) {
+            return 0;
+        }
+    }
+    //endregion
 }
 

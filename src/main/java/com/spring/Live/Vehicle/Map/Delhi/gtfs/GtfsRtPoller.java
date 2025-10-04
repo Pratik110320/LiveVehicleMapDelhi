@@ -19,8 +19,8 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Component
@@ -40,7 +40,7 @@ public class GtfsRtPoller {
     public GtfsRtPoller(VehicleStoreService vehicleStoreService,
                         GtfsStaticService gtfsStaticService,
                         NotificationService notificationService,
-                        WebClient webClient) { // Inject the configured WebClient bean
+                        WebClient webClient) {
         this.vehicleStoreService = vehicleStoreService;
         this.gtfsStaticService = gtfsStaticService;
         this.notificationService = notificationService;
@@ -62,7 +62,7 @@ public class GtfsRtPoller {
                 .retrieve()
                 .bodyToMono(byte[].class)
                 .flatMap(this::processFeed)
-                .doOnError(error -> log.error("Error polling or processing GTfs-RT feed: {}", error.getMessage(), error))
+                .doOnError(error -> log.error("Error polling or processing GTFS-RT feed: {}", error.getMessage(), error))
                 .onErrorResume(e -> Mono.empty()) // Don't stop scheduling on error
                 .subscribe();
     }
@@ -76,21 +76,32 @@ public class GtfsRtPoller {
 
             try {
                 GtfsRealtime.FeedMessage feed = GtfsRealtime.FeedMessage.parseFrom(feedBytes);
-                log.info("Parsed feed with {} entities.", feed.getEntityCount());
+                // Get the set of currently active service IDs from the static service
+                Set<String> activeServiceIds = gtfsStaticService.getActiveServiceIds();
+                if (activeServiceIds.isEmpty()) {
+                    log.warn("No active service IDs found for today. No vehicles will be processed.");
+                } else {
+                    log.info("Found {} active service IDs for today. Filtering vehicles.", activeServiceIds.size());
+                }
 
                 List<VehicleDto> updatedVehicles = feed.getEntityList().stream()
-                        .map(this::createVehicleDto)
+                        .filter(entity -> entity.hasVehicle() && entity.getVehicle().hasTrip())
+                        .map(this::createVehicleDto) // First, create the DTO
                         .filter(Objects::nonNull)
+                        // CRITICAL FIX: Only include vehicles whose trip is running on an active service today
+                        .filter(dto -> {
+                            TripDto trip = gtfsStaticService.getTripById(dto.getTripId());
+                            return trip != null && activeServiceIds.contains(trip.getServiceId());
+                        })
                         .collect(Collectors.toList());
 
-                // Now that we have all vehicles, update the store and notify
                 if (!updatedVehicles.isEmpty()) {
                     updatedVehicles.forEach(vehicleStoreService::save);
                     notificationService.sendVehicleUpdate(updatedVehicles);
-                    log.info("Processed and sent updates for {} vehicles.", updatedVehicles.size());
+                    log.info("Processed and sent updates for {} active vehicles.", updatedVehicles.size());
                 } else {
-                    log.info("No vehicle updates in this poll.");
-                    notificationService.sendHeartbeat();
+                    log.info("No active vehicle updates in this poll.");
+                    notificationService.sendHeartbeat(); // Send heartbeat to keep clients connected
                 }
 
             } catch (Exception e) {
@@ -101,13 +112,11 @@ public class GtfsRtPoller {
 
 
     private VehicleDto createVehicleDto(GtfsRealtime.FeedEntity entity) {
-        if (!entity.hasVehicle()) return null;
-
         GtfsRealtime.VehiclePosition vehicle = entity.getVehicle();
         if (!vehicle.hasPosition() || !vehicle.hasTrip() || !vehicle.hasVehicle()) return null;
 
         String vehicleId = vehicle.getVehicle().getId();
-        if (vehicleId == null || vehicleId.isBlank()) return null; // We need an ID to track it
+        if (vehicleId == null || vehicleId.isBlank()) return null;
 
         VehicleDto dto = new VehicleDto();
         dto.setVehicleId(vehicleId);
@@ -122,12 +131,14 @@ public class GtfsRtPoller {
         // Enrich with static data
         TripDto tripDto = gtfsStaticService.getTripById(trip.getTripId());
         if (tripDto != null) {
-            dto.setRouteId(tripDto.getRouteId());
-            RouteDto routeDto = gtfsStaticService.getRoutes().get(tripDto.getRouteId());
+            dto.setTripHeadsign(tripDto.getTripHeadsign());
+            RouteDto routeDto = gtfsStaticService.getRouteById(tripDto.getRouteId());
             if (routeDto != null) {
+                dto.setRouteId(routeDto.getRouteId());
                 dto.setRouteName(routeDto.getRouteShortName());
             }
         }
         return dto;
     }
 }
+

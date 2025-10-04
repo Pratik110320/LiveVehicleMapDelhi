@@ -2,7 +2,13 @@ package com.spring.Live.Vehicle.Map.Delhi.model;
 
 import com.opencsv.bean.CsvBindByName;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+
 public class CalendarDto {
+    private static final DateTimeFormatter GTFS_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd");
+
+
     @CsvBindByName(column = "service_id")
     private String serviceId;
     @CsvBindByName
@@ -20,10 +26,25 @@ public class CalendarDto {
     @CsvBindByName
     private boolean sunday;
     @CsvBindByName(column = "start_date")
-    private String startDate;
+    private LocalDate startDate;
     @CsvBindByName(column = "end_date")
-    private String endDate;
+    private LocalDate endDate;
 
+
+    public boolean isActiveOn(LocalDate date) {
+        if (date.isBefore(startDate) || date.isAfter(endDate)) {
+            return false;
+        }
+        return switch (date.getDayOfWeek()) {
+            case MONDAY -> monday;
+            case TUESDAY -> tuesday;
+            case WEDNESDAY -> wednesday;
+            case THURSDAY -> thursday;
+            case FRIDAY -> friday;
+            case SATURDAY -> saturday;
+            case SUNDAY -> sunday;
+        };
+    }
     // Getters and Setters
     public String getServiceId() { return serviceId; }
     public void setServiceId(String serviceId) { this.serviceId = serviceId; }
@@ -41,8 +62,8 @@ public class CalendarDto {
     public void setSaturday(boolean saturday) { this.saturday = saturday; }
     public boolean isSunday() { return sunday; }
     public void setSunday(boolean sunday) { this.sunday = sunday; }
-    public String getStartDate() { return startDate; }
-    public void setStartDate(String startDate) { this.startDate = startDate; }
-    public String getEndDate() { return endDate; }
-    public void setEndDate(String endDate) { this.endDate = endDate; }
+    public LocalDate getStartDate() { return startDate; }
+    public void setStartDate(String startDate) { this.startDate = LocalDate.parse(startDate, GTFS_DATE_FORMAT); }
+    public LocalDate getEndDate() { return endDate; }
+    public void setEndDate(String endDate) { this.endDate = LocalDate.parse(endDate, GTFS_DATE_FORMAT); }
 }

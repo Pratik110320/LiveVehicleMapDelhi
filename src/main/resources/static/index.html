@@ -78,9 +78,8 @@
 <body class="bg-gray-100">
 <div id="root"></div>
 <script type="text/babel">
-    const { useState, useEffect, useRef, useCallback } = React;
+    const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
-    // --- Status Indicator Component ---
     const StatusIndicator = ({ status }) => {
         const statusConfig = {
             connecting: { color: 'bg-yellow-500', text: 'Connecting...' },
@@ -97,6 +96,60 @@
         );
     };
 
+    const Search = ({ onStopSelect }) => {
+        const [query, setQuery] = useState('');
+        const [results, setResults] = useState([]);
+        const [loading, setLoading] = useState(false);
+
+        useEffect(() => {
+            if (query.length < 3) {
+                setResults([]);
+                return;
+            }
+            const debounce = setTimeout(() => {
+                setLoading(true);
+                fetch(`/api/stops/search?q=${query}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        setResults(data);
+                        setLoading(false);
+                    })
+                    .catch(() => setLoading(false));
+            }, 300);
+            return () => clearTimeout(debounce);
+        }, [query]);
+
+        const handleSelect = (stop) => {
+            onStopSelect(stop);
+            setQuery('');
+            setResults([]);
+        }
+
+        return (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] w-full max-w-md px-4">
+                <div className="relative">
+                    <input
+                        type="text"
+                        value={query}
+                        onChange={e => setQuery(e.target.value)}
+                        placeholder="Search for a bus stop..."
+                        className="w-full px-4 py-2 text-gray-800 bg-white rounded-full shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    {results.length > 0 && (
+                        <ul className="absolute w-full mt-2 bg-white rounded-lg shadow-xl overflow-hidden">
+                            {results.map(stop => (
+                                <li key={stop.stopId} onClick={() => handleSelect(stop)}
+                                    className="px-4 py-2 cursor-pointer hover:bg-gray-100">
+                                    {stop.stopName}
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </div>
+            </div>
+        )
+    }
+
     // --- Main App Component ---
     const App = () => {
         const [vehicles, setVehicles] = useState({});
@@ -111,8 +164,8 @@
         const [routesForStop, setRoutesForStop] = useState({ loading: false, data: [] });
         const [routePath, setRoutePath] = useState([]);
         const lastUpdateRef = useRef(null);
+        const mapRef = useRef(null);
 
-        // Fetch static data once
         useEffect(() => {
             fetch('/api/stops/all')
                 .then(res => res.json())
@@ -120,21 +173,15 @@
                 .catch(err => console.error("Failed to fetch stops:", err));
         }, []);
 
-        // Manage SSE connection
         useEffect(() => {
+            // SSE connection logic remains the same
             let eventSource;
             let reconnectTimeout;
 
             function connect() {
                 eventSource = new EventSource('/vehicles');
                 setConnectionStatus('connecting');
-
-                eventSource.onopen = () => {
-                    console.log("SSE Connection opened.");
-                    setConnectionStatus('live');
-                    lastUpdateRef.current = Date.now();
-                };
-
+                eventSource.onopen = () => setConnectionStatus('live');
                 eventSource.onmessage = e => {
                     const eventData = JSON.parse(e.data);
                     if (eventData.type === 'vehicles') {
@@ -147,38 +194,31 @@
                         if (connectionStatus !== 'live') setConnectionStatus('live');
                     }
                 };
-
                 eventSource.addEventListener('heartbeat', () => {
                     lastUpdateRef.current = Date.now();
                     if (connectionStatus !== 'live') setConnectionStatus('live');
                 });
-
-                eventSource.onerror = (err) => {
-                    console.error("EventSource failed:", err);
+                eventSource.onerror = () => {
                     setConnectionStatus('disconnected');
                     eventSource.close();
-                    // Schedule reconnection
-                    clearTimeout(reconnectTimeout);
-                    reconnectTimeout = setTimeout(connect, 5000); // Try to reconnect after 5 seconds
+                    reconnectTimeout = setTimeout(connect, 5000);
                 };
             }
 
             connect();
 
-            // Check for stale data
             const staleCheckInterval = setInterval(() => {
                 if (lastUpdateRef.current && (Date.now() - lastUpdateRef.current > 45000)) {
                    if (connectionStatus === 'live') setConnectionStatus('stale');
                 }
             }, 10000);
 
-
             return () => {
                 if (eventSource) eventSource.close();
                 clearTimeout(reconnectTimeout);
                 clearInterval(staleCheckInterval);
             };
-        }, []);
+        }, [connectionStatus]);
 
         const handleSelectVehicle = useCallback((vehicle) => {
             setSelectedVehicle(vehicle);
@@ -187,13 +227,11 @@
             setTripSchedule({ loading: true, data: [] });
             setRoutePath([]);
             if (vehicle.tripId) {
+                // CORRECTED: This now points to the correct, existing endpoint in GtfsController.
                 fetch(`/api/trips/${vehicle.tripId}/schedule`)
                     .then(res => res.json())
-                    .then(data => setTripSchedule({ loading: false, data }))
-                    .catch(err => {
-                        console.error("Failed to fetch trip schedule", err);
-                        setTripSchedule({ loading: false, data: [] });
-                    });
+                    .then(data => setTripSchedule({ loading: false, data: data }))
+                    .catch(() => setTripSchedule({ loading: false, data: [] }));
             }
             if (vehicle.routeId) {
                  fetch(`/api/routes/${vehicle.routeId}/path`)
@@ -212,10 +250,11 @@
             fetch(`/api/stops/${stop.stopId}/routes`)
                 .then(res => res.json())
                 .then(data => setRoutesForStop({ loading: false, data }))
-                .catch(err => {
-                    console.error("Failed to fetch routes for stop", err);
-                    setRoutesForStop({ loading: false, data: [] });
-                });
+                .catch(() => setRoutesForStop({ loading: false, data: [] }));
+
+            if (mapRef.current) {
+                mapRef.current.setView([stop.stopLat, stop.stopLon], 16);
+            }
         }, []);
 
         const handleSelectRouteFromStop = useCallback((route) => {
@@ -234,6 +273,8 @@
             setRoutesForStop({ loading: false, data: [] });
         };
 
+        const vehicleList = useMemo(() => Object.values(vehicles), [vehicles]);
+
         return (
             <div className="relative h-screen w-screen">
                 <Sidebar
@@ -241,8 +282,10 @@
                     tripSchedule={tripSchedule} routesForStop={routesForStop}
                     onSelectRoute={handleSelectRouteFromStop} onClear={clearSelection}
                 />
+                 <Search onStopSelect={handleSelectStop} />
                 <MapComponent
-                    vehicles={Object.values(vehicles)} allStops={allStops}
+                    mapRef={mapRef}
+                    vehicles={vehicleList} allStops={allStops}
                     onSelectVehicle={handleSelectVehicle} onSelectStop={handleSelectStop}
                     selectedVehicle={selectedVehicle}
                     routePath={routePath} tripScheduleStops={tripSchedule.data}
@@ -253,11 +296,75 @@
         );
     };
 
+    // --- Fare Calculator ---
+    const FareCalculator = ({ fromStop, route }) => {
+        const [destinationStops, setDestinationStops] = useState([]);
+        const [selectedDest, setSelectedDest] = useState('');
+        const [fare, setFare] = useState(null);
+        const [loading, setLoading] = useState(false);
+
+        useEffect(() => {
+            if (route) {
+                fetch(`/api/routes/${route.routeId}/path`)
+                    .then(res => res.json())
+                    .then(stops => setDestinationStops(stops))
+                    .catch(() => setDestinationStops([]));
+            }
+        }, [route]);
+
+        const handleCalculate = () => {
+            if (!selectedDest || !fromStop || !route) return;
+            setLoading(true);
+            setFare(null);
+            fetch(`/api/fare?routeId=${route.routeId}&fromStopId=${fromStop.stopId}&toStopId=${selectedDest}`)
+                .then(res => res.ok ? res.json() : Promise.reject('No fare found'))
+                .then(data => {
+                    setFare(data.price !== null ? `₹${data.price}`: 'Not available');
+                    setLoading(false);
+                })
+                .catch(() => {
+                    setFare('Not available');
+                    setLoading(false);
+                });
+        };
+
+        return (
+            <div className="mt-4 p-4 border-t">
+                <h4 className="font-semibold text-gray-700 mb-2">Fare Calculator</h4>
+                <p className="text-sm mb-2">Route: <span className="font-bold">{route.routeShortName}</span></p>
+                <div className="space-y-3">
+                    <select
+                        value={selectedDest}
+                        onChange={e => setSelectedDest(e.target.value)}
+                        className="w-full p-2 border rounded-md bg-white text-sm"
+                    >
+                        <option value="">Select destination stop</option>
+                        {destinationStops.filter(s => s.stopId !== fromStop.stopId).map(s => (
+                            <option key={s.stopId} value={s.stopId}>{s.stopName}</option>
+                        ))}
+                    </select>
+                    <button onClick={handleCalculate} disabled={!selectedDest || loading} className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400">
+                        {loading ? 'Calculating...' : 'Get Fare'}
+                    </button>
+                    {fare && <p className="text-center font-bold text-lg mt-2">Fare: {fare}</p>}
+                </div>
+            </div>
+        );
+    };
+
+
     // --- Sidebar Component ---
     const Sidebar = ({ view, vehicle, stop, tripSchedule, routesForStop, onSelectRoute, onClear }) => {
         const isVisible = view !== 'hidden';
+        const [selectedRouteForFare, setSelectedRouteForFare] = useState(null);
+
         const title = view === 'vehicle-details' ? `Route ${vehicle?.routeName || 'N/A'}` :
                       view === 'stop-details' ? `Stop Details` : 'Details';
+
+        const handleRouteSelect = (route) => {
+            onSelectRoute(route);
+            setSelectedRouteForFare(route);
+        }
 
         return (
             <div className={`sidebar absolute top-0 left-0 h-full w-80 md:w-96 bg-white shadow-lg z-[1000] transform ${isVisible ? 'translate-x-0' : '-translate-x-full'}`}>
@@ -300,7 +407,7 @@
                                 <ul className="px-2">
                                     {routesForStop.data.map(route => (
                                         <li key={route.routeId}>
-                                            <button onClick={() => onSelectRoute(route)} className="w-full text-left p-2.5 my-1 rounded-lg hover:bg-gray-100 focus:bg-blue-100 focus:outline-none transition-colors">
+                                            <button onClick={() => handleRouteSelect(route)} className="w-full text-left p-2.5 my-1 rounded-lg hover:bg-gray-100 focus:bg-blue-100 focus:outline-none transition-colors">
                                                 <span className="font-bold bg-blue-600 text-white rounded px-2 py-1 text-sm w-14 inline-block text-center mr-3">{route.routeShortName}</span>
                                                 <span className="text-sm text-gray-700">{route.routeLongName}</span>
                                             </button>
@@ -308,6 +415,7 @@
                                     ))}
                                 </ul>
                                 }
+                                {selectedRouteForFare && <FareCalculator fromStop={stop} route={selectedRouteForFare} />}
                             </>
                         )}
                     </div>
@@ -317,12 +425,11 @@
     };
 
     // --- Map Component ---
-    const MapComponent = ({ vehicles, allStops, onSelectVehicle, onSelectStop, selectedVehicle, routePath, tripScheduleStops, selectedStop }) => {
-        const mapRef = useRef(null);
+    const MapComponent = ({ mapRef, vehicles, allStops, onSelectVehicle, onSelectStop, selectedVehicle, routePath, tripScheduleStops, selectedStop }) => {
         const vehicleMarkersRef = useRef({});
         const stopMarkersRef = useRef({});
         const routeLayerRef = useRef(null);
-        const stopsLayerRef = useRef(null);
+        const stopsLayerRef = useRef(null); // Changed to marker cluster group
 
         useEffect(() => {
             if (!mapRef.current) {
@@ -330,35 +437,27 @@
                 L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { attribution: '&copy; OpenStreetMap &copy; CARTO' }).addTo(mapRef.current);
                 L.control.zoom({ position: 'topright' }).addTo(mapRef.current);
                 routeLayerRef.current = L.layerGroup().addTo(mapRef.current);
-                stopsLayerRef.current = L.layerGroup().addTo(mapRef.current);
+                stopsLayerRef.current = L.markerClusterGroup({
+                     chunkedLoading: true,
+                     maxClusterRadius: 60,
+                     disableClusteringAtZoom: 15
+                }).addTo(mapRef.current);
             }
         }, []);
 
-        // Manage stop markers
         useEffect(() => {
-            if (!mapRef.current || allStops.length === 0) return;
-            allStops.forEach(stop => {
-                if (!stopMarkersRef.current[stop.stopId]) {
-                    const marker = L.marker([stop.stopLat, stop.stopLon], {
-                        icon: L.divIcon({ className: 'stop-marker-icon', iconSize: [8, 8] }), zIndexOffset: 100
-                    }).on('click', () => onSelectStop(stop));
-                    stopMarkersRef.current[stop.stopId] = marker;
-                }
+            stopsLayerRef.current.clearLayers();
+            const stopMarkers = allStops.map(stop => {
+                const marker = L.marker([stop.stopLat, stop.stopLon], {
+                    icon: L.divIcon({ className: 'stop-marker-icon', iconSize: [8, 8] }), zIndexOffset: 100
+                }).on('click', () => onSelectStop(stop));
+                stopMarkersRef.current[stop.stopId] = marker;
+                return marker;
             });
-
-            const manageStopVisibility = () => {
-                const zoom = mapRef.current.getZoom();
-                Object.values(stopMarkersRef.current).forEach(marker => {
-                    if (zoom >= 14 && !stopsLayerRef.current.hasLayer(marker)) stopsLayerRef.current.addLayer(marker);
-                    else if (zoom < 14 && stopsLayerRef.current.hasLayer(marker)) stopsLayerRef.current.removeLayer(marker);
-                });
-            };
-            mapRef.current.on('zoomend', manageStopVisibility);
-            manageStopVisibility();
-            return () => mapRef.current.off('zoomend', manageStopVisibility);
+            stopsLayerRef.current.addLayers(stopMarkers);
         }, [allStops, onSelectStop]);
 
-        // Highlight stops for selected route/trip
+
         useEffect(() => {
             const tripStopIds = new Set(tripScheduleStops.map(s => s?.stopId));
              Object.entries(stopMarkersRef.current).forEach(([id, marker]) => {
@@ -366,14 +465,10 @@
                 if (selectedStop?.stopId === id) className += ' selected';
                 else if (tripStopIds.has(id)) className += ' highlighted';
                 marker.setIcon(L.divIcon({ className, iconSize: [8, 8] }));
-                if (className !== 'stop-marker-icon' && !stopsLayerRef.current.hasLayer(marker)) {
-                    stopsLayerRef.current.addLayer(marker);
-                }
             });
         }, [tripScheduleStops, selectedStop]);
 
 
-        // Draw route path
         useEffect(() => {
             routeLayerRef.current.clearLayers();
             if (routePath && routePath.length > 0) {
@@ -386,10 +481,11 @@
             }
         }, [routePath]);
 
-        // Update vehicle markers
         useEffect(() => {
+            const vehicleIdsOnMap = new Set(Object.keys(vehicleMarkersRef.current));
             vehicles.forEach(vehicle => {
                 const { vehicleId, lat, lon, routeName } = vehicle;
+                vehicleIdsOnMap.delete(vehicleId);
                 const isSelected = selectedVehicle?.vehicleId === vehicleId;
                 const iconHtml = `<div>${routeName || ''}</div>`;
                 const iconClassName = `bus-marker ${isSelected ? 'selected' : ''}`;
@@ -398,24 +494,20 @@
                 if (vehicleMarkersRef.current[vehicleId]) {
                     vehicleMarkersRef.current[vehicleId].setLatLng([lat, lon]).setIcon(busIcon);
                 } else {
-                    const newMarker = L.marker([lat, lon], { icon: busIcon })
+                    const newMarker = L.marker([lat, lon], { icon: busIcon, zIndexOffset: 1000 })
                         .on('click', () => onSelectVehicle(vehicle))
                         .addTo(mapRef.current);
                     vehicleMarkersRef.current[vehicleId] = newMarker;
                 }
             });
-             // Highlight selected vehicle
-            Object.entries(vehicleMarkersRef.current).forEach(([id, marker]) => {
-                const isSelected = selectedVehicle?.vehicleId === id;
-                const currentClassName = marker.options.icon.options.className;
-                const shouldBeSelected = currentClassName.includes('selected');
-
-                if (isSelected && !shouldBeSelected) {
-                     marker.setIcon(L.divIcon({ ...marker.options.icon.options, className: `${currentClassName} selected`}));
-                } else if (!isSelected && shouldBeSelected) {
-                     marker.setIcon(L.divIcon({ ...marker.options.icon.options, className: currentClassName.replace(' selected', '')}));
+            // remove vehicles that are no longer in the feed
+            vehicleIdsOnMap.forEach(id => {
+                if(vehicleMarkersRef.current[id]) {
+                    vehicleMarkersRef.current[id].remove();
+                    delete vehicleMarkersRef.current[id];
                 }
-            });
+            })
+
         }, [vehicles, onSelectVehicle, selectedVehicle]);
 
         return <div id="map" className="h-full w-full z-0"></div>;
@@ -426,3 +518,4 @@
 </script>
 </body>
 </html>
+

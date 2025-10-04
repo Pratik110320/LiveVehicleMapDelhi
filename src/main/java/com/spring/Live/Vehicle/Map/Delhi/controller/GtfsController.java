@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api")
@@ -21,8 +22,8 @@ public class GtfsController {
     }
 
     @GetMapping("/routes")
-    public Collection<RouteDto> getActiveRoutes() {
-        return gtfsStaticService.getActiveRoutes();
+    public Collection<RouteDto> getActiveRoutes(@RequestParam(required = false) String q) {
+        return gtfsStaticService.getActiveRoutes(q);
     }
 
     @GetMapping("/stops/all")
@@ -35,10 +36,6 @@ public class GtfsController {
         return gtfsStaticService.getStopsByRouteId(routeId);
     }
 
-    /**
-     * Returns an ordered list of stops representing the path for a given route.
-     * This is used to draw the polyline on the map.
-     */
     @GetMapping("/routes/{routeId}/path")
     public List<StopDto> getRoutePath(@PathVariable String routeId) {
         return gtfsStaticService.getStopsByRouteId(routeId);
@@ -64,12 +61,8 @@ public class GtfsController {
             @RequestParam String routeId,
             @RequestParam String fromStopId,
             @RequestParam String toStopId) {
-        FareAttributeDto fare = gtfsStaticService.getFare(routeId, fromStopId, toStopId);
-        if (fare != null) {
-            return ResponseEntity.ok(fare);
-        } else {
-            return ResponseEntity.notFound().build();
-        }
+        return ResponseEntity.of(Optional.ofNullable(
+                gtfsStaticService.getFare(routeId, fromStopId, toStopId))
+        );
     }
 }
-
