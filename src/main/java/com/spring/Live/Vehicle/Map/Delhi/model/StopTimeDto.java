@@ -14,6 +14,8 @@ public class StopTimeDto {
     @CsvBindByName(column = "stop_sequence")
     private int stopSequence;
 
+    private TripDto trip;
+    private StopDto stop;
     // Getters and Setters
     public String getTripId() { return tripId; }
     public void setTripId(String tripId) { this.tripId = tripId; }
@@ -25,4 +27,10 @@ public class StopTimeDto {
     public void setStopId(String stopId) { this.stopId = stopId; }
     public int getStopSequence() { return stopSequence; }
     public void setStopSequence(int stopSequence) { this.stopSequence = stopSequence; }
+
+    public TripDto getTrip() { return trip; }
+    public void setTrip(TripDto trip) { this.trip = trip; }
+
+    public StopDto getStop() { return stop; }
+    public void setStop(StopDto stop) { this.stop = stop; }
 }
