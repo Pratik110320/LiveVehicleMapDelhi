@@ -116,3 +116,8 @@ spring-boot-app/
 
 src/main/resources/static/fare_attributes.txt
 src/main/resources/static/stop_times.txt
+
+# Ignore H2 DB files
+*.mv.db
+*.trace.db
+transit.db.mv.db
