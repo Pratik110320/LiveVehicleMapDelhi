@@ -9,6 +9,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -32,7 +34,35 @@ public class NotificationService {
         }
     }
 
-    public void sendVehicleUpdate(List<Vehicle> vehicles) {
+    /**
+     * Public entry point: accept a List of vehicles.
+     */
+    public void sendVehicleUpdates(List<Vehicle> vehicles) {
+        if (vehicles == null) {
+            log.debug("sendVehicleUpdates called with null list; nothing to send.");
+            return;
+        }
+        sendVehicleUpdateInternal(vehicles);
+    }
+
+    /**
+     * Overload: accept a Map of vehicles (most stores use Map<id, Vehicle>).
+     * Converts to a List and delegates to the List-based method.
+     */
+    public void sendVehicleUpdates(Map<String, Vehicle> vehicleMap) {
+        if (vehicleMap == null) {
+            log.debug("sendVehicleUpdates called with null map; nothing to send.");
+            return;
+        }
+        Collection<Vehicle> values = vehicleMap.values();
+        List<Vehicle> vehicles = new ArrayList<>(values);
+        sendVehicleUpdateInternal(vehicles);
+    }
+
+    /**
+     * Single internal method that serializes and sends SSE event to all emitters.
+     */
+    private void sendVehicleUpdateInternal(List<Vehicle> vehicles) {
         String jsonData;
         try {
             Map<String, Object> eventData = Map.of("type", "vehicles", "payload", vehicles);
@@ -44,15 +74,15 @@ public class NotificationService {
 
         // Send as unnamed event so browser `EventSource.onmessage` receives it
         SseEmitter.SseEventBuilder event = SseEmitter.event().data(jsonData);
-        senAllEmitters(event);
+        sendAllEmitters(event);
     }
 
     public void sendHeartbeat() {
         SseEmitter.SseEventBuilder event = SseEmitter.event().name("heartbeat").data("ping");
-        senAllEmitters(event);
+        sendAllEmitters(event);
     }
 
-    private void senAllEmitters(SseEmitter.SseEventBuilder event) {
+    private void sendAllEmitters(SseEmitter.SseEventBuilder event) {
         for (SseEmitter emitter : emitters) {
             try {
                 emitter.send(event);
@@ -74,4 +104,3 @@ public class NotificationService {
         return emitters.size();
     }
 }
-

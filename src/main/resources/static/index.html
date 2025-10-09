@@ -3,519 +3,851 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Delhi Live Bus Tracker</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
-
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-
-    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <title>Delhi Live Transit Map</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body { font-family: 'Inter', sans-serif; overflow: hidden; }
-        .leaflet-container { height: 100vh; width: 100%; background-color: #f0f2f5; }
-        .sidebar { transition: transform 300ms cubic-bezier(0.4, 0, 0.2, 1); }
-        .bus-marker {
-            display: flex; align-items: center; justify-content: center;
-            width: 32px; height: 32px; background-color: #1a73e8;
-            color: white; border-radius: 50%; box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-            border: 2px solid white; font-size: 12px; font-weight: 700;
-            transition: transform 0.2s ease;
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
-        .bus-marker.selected {
-            transform: scale(1.3);
-            background-color: #fbbc05;
-            z-index: 1000 !important;
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            overflow: hidden;
         }
-        .stop-marker-icon {
-            background-color: #fff; border: 2px solid #5f6368;
-            border-radius: 50%; width: 8px; height: 8px;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+
+        #app {
+            display: flex;
+            height: 100vh;
+            width: 100vw;
         }
-        .stop-marker-icon.highlighted {
-            background-color: #1a73e8; border-color: #fff; transform: scale(1.5);
+
+        /* Sidebar */
+        #sidebar {
+            width: 380px;
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(10px);
+            box-shadow: 4px 0 20px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            z-index: 1000;
+            transition: transform 0.3s ease;
         }
-        .stop-marker-icon.selected {
-            background-color: #fbbc05; border: 2px solid #fff; transform: scale(2);
+
+        #sidebar.collapsed {
+            transform: translateX(-380px);
         }
-        .loader {
-            border: 4px solid #f3f3f3; border-radius: 50%; border-top: 4px solid #1a73e8;
-            width: 30px; height: 30px; animation: spin 1s linear infinite;
+
+        .sidebar-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
         }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .sidebar-content { scrollbar-width: thin; scrollbar-color: #a0aec0 #edf2f7; }
-        .sidebar-content::-webkit-scrollbar { width: 6px; }
-        .sidebar-content::-webkit-scrollbar-track { background: #edf2f7; }
-        .sidebar-content::-webkit-scrollbar-thumb { background-color: #a0aec0; border-radius: 10px; border: 3px solid #edf2f7; }
-        .marker-cluster-small, .marker-cluster-medium, .marker-cluster-large {
-        	background-color: rgba(26, 115, 232, 0.7);
+
+        .sidebar-header h1 {
+            font-size: 24px;
+            margin-bottom: 5px;
         }
-        .marker-cluster-small div, .marker-cluster-medium div, .marker-cluster-large div {
-        	background-color: rgba(26, 115, 232, 0.9);
-            color: #fff; font-weight: bold; text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+
+        .sidebar-header p {
+            font-size: 13px;
+            opacity: 0.9;
         }
-        .status-indicator {
-            position: absolute; top: 10px; right: 10px; z-index: 1000;
-            display: flex; align-items: center; background-color: white;
-            padding: 5px 10px; border-radius: 20px; box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-            cursor: default;
+
+        .status-bar {
+            display: flex;
+            justify-content: space-around;
+            padding: 15px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e0e0e0;
         }
-        .status-dot {
-            width: 12px; height: 12px; border-radius: 50%;
-            margin-right: 8px; transition: background-color 0.3s ease;
+
+        .status-item {
+            text-align: center;
+        }
+
+        .status-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .status-label {
+            font-size: 11px;
+            color: #666;
+            margin-top: 4px;
+        }
+
+        .tabs {
+            display: flex;
+            background: #f8f9fa;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+            font-weight: 500;
+            color: #666;
+            transition: all 0.3s;
+            border-bottom: 3px solid transparent;
+        }
+
+        .tab:hover {
+            background: #e9ecef;
+        }
+
+        .tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+            background: white;
+        }
+
+        .tab-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .tab-panel {
+            display: none;
+        }
+
+        .tab-panel.active {
+            display: block;
+        }
+
+        /* Form Styles */
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            color: #333;
+            font-size: 14px;
+        }
+
+        .input-group input,
+        .input-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .input-group input:focus,
+        .input-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            margin-top: 10px;
+        }
+
+        /* Results */
+        .result-card {
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 12px;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+
+        .result-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .result-title {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+            font-size: 15px;
+        }
+
+        .result-detail {
+            font-size: 13px;
+            color: #666;
+            margin: 4px 0;
+        }
+
+        .result-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            background: #667eea;
+            color: white;
+            border-radius: 12px;
+            font-size: 11px;
+            margin-right: 6px;
+            margin-top: 6px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #999;
+        }
+
+        .empty-state svg {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 15px;
+            opacity: 0.5;
+        }
+
+        /* Map Container */
+        #map-container {
+            flex: 1;
+            position: relative;
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Toggle Button */
+        #toggle-sidebar {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 1001;
+            background: white;
+            border: none;
+            border-radius: 8px;
+            padding: 12px 15px;
+            cursor: pointer;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+            transition: all 0.3s;
+        }
+
+        #toggle-sidebar:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Custom Popup */
+        .leaflet-popup-content-wrapper {
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+        }
+
+        .popup-content {
+            padding: 10px;
+        }
+
+        .popup-title {
+            font-weight: 600;
+            color: #667eea;
+            margin-bottom: 8px;
+            font-size: 16px;
+        }
+
+        .popup-detail {
+            font-size: 13px;
+            color: #555;
+            margin: 4px 0;
+        }
+
+        /* Scrollbar */
+        .tab-content::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .tab-content::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+
+        .tab-content::-webkit-scrollbar-thumb {
+            background: #667eea;
+            border-radius: 3px;
+        }
+
+        /* Location Button */
+        .locate-btn {
+            position: absolute;
+            bottom: 100px;
+            right: 20px;
+            z-index: 1000;
+            background: white;
+            border: none;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            cursor: pointer;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s;
+        }
+
+        .locate-btn:hover {
+            transform: scale(1.1);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        @media (max-width: 768px) {
+            #sidebar {
+                width: 100%;
+                max-width: 380px;
+            }
         }
     </style>
 </head>
-<body class="bg-gray-100">
-<div id="root"></div>
-<script type="text/babel">
-    const { useState, useEffect, useRef, useCallback, useMemo } = React;
+<body>
+<div id="app">
+    <div id="sidebar">
+        <div class="sidebar-header">
+            <h1>🚌 Delhi Transit</h1>
+            <p>Real-time vehicle tracking & route planning</p>
+        </div>
 
-    const StatusIndicator = ({ status }) => {
-        const statusConfig = {
-            connecting: { color: 'bg-yellow-500', text: 'Connecting...' },
-            live: { color: 'bg-green-500', text: 'Live' },
-            stale: { color: 'bg-orange-500', text: 'Delayed' },
-            disconnected: { color: 'bg-red-500', text: 'Disconnected' },
-        };
-        const { color, text } = statusConfig[status] || statusConfig.disconnected;
-        return (
-            <div className="status-indicator" title={`Data feed status: ${text}`}>
-                <div className={`status-dot ${color}`}></div>
-                <span className="text-sm font-semibold text-gray-700">{text}</span>
+        <div class="status-bar">
+            <div class="status-item">
+                <div class="status-value" id="vehicleCount">0</div>
+                <div class="status-label">Active Buses</div>
             </div>
-        );
-    };
+            <div class="status-item">
+                <div class="status-value" id="feedAge">--</div>
+                <div class="status-label">Feed Age (s)</div>
+            </div>
+        </div>
 
-    const Search = ({ onStopSelect }) => {
-        const [query, setQuery] = useState('');
-        const [results, setResults] = useState([]);
-        const [loading, setLoading] = useState(false);
+        <div class="tabs">
+            <div class="tab active" data-tab="nearby">Nearby</div>
+            <div class="tab" data-tab="routes">Routes</div>
+            <div class="tab" data-tab="search">Search</div>
+        </div>
 
-        useEffect(() => {
-            if (query.length < 3) {
-                setResults([]);
-                return;
-            }
-            const debounce = setTimeout(() => {
-                setLoading(true);
-                fetch(`/api/stops/search?q=${query}`)
-                    .then(res => res.json())
-                    .then(data => {
-                        setResults(data);
-                        setLoading(false);
-                    })
-                    .catch(() => setLoading(false));
-            }, 300);
-            return () => clearTimeout(debounce);
-        }, [query]);
-
-        const handleSelect = (stop) => {
-            onStopSelect(stop);
-            setQuery('');
-            setResults([]);
-        }
-
-        return (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] w-full max-w-md px-4">
-                <div className="relative">
-                    <input
-                        type="text"
-                        value={query}
-                        onChange={e => setQuery(e.target.value)}
-                        placeholder="Search for a bus stop..."
-                        className="w-full px-4 py-2 text-gray-800 bg-white rounded-full shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    {results.length > 0 && (
-                        <ul className="absolute w-full mt-2 bg-white rounded-lg shadow-xl overflow-hidden">
-                            {results.map(stop => (
-                                <li key={stop.stopId} onClick={() => handleSelect(stop)}
-                                    className="px-4 py-2 cursor-pointer hover:bg-gray-100">
-                                    {stop.stopName}
-                                </li>
-                            ))}
-                        </ul>
-                    )}
+        <div class="tab-content">
+            <!-- Nearby Tab -->
+            <div class="tab-panel active" id="nearby-panel">
+                <div class="input-group">
+                    <label>📍 Your Location</label>
+                    <input type="number" id="userLat" placeholder="Latitude (e.g., 28.6139)" step="0.0001" value="28.6139">
                 </div>
+                <div class="input-group">
+                    <input type="number" id="userLon" placeholder="Longitude (e.g., 77.2090)" step="0.0001" value="77.2090">
+                </div>
+                <div class="input-group">
+                    <label>Number of Stops</label>
+                    <input type="number" id="nearbyLimit" value="5" min="1" max="20">
+                </div>
+                <button class="btn" onclick="findNearbyStops()">Find Nearby Stops</button>
+
+                <div id="nearbyResults" style="margin-top: 20px;"></div>
             </div>
-        )
+
+            <!-- Routes Tab -->
+            <div class="tab-panel" id="routes-panel">
+                <div class="input-group">
+                    <label>🚏 Origin Stop ID</label>
+                    <input type="text" id="originStop" placeholder="e.g., STOP001">
+                </div>
+                <div class="input-group">
+                    <label>🎯 Destination Stop ID</label>
+                    <input type="text" id="destStop" placeholder="e.g., STOP150">
+                </div>
+                <button class="btn" onclick="planRoute()">Plan Route</button>
+                <button class="btn btn-secondary" onclick="calculateFare()">Calculate Fare</button>
+
+                <div id="routeResults" style="margin-top: 20px;"></div>
+            </div>
+
+            <!-- Search Tab -->
+            <div class="tab-panel" id="search-panel">
+                <div class="input-group">
+                    <label>🔍 Search Stops</label>
+                    <input type="text" id="searchStops" placeholder="Search by name or code">
+                </div>
+                <button class="btn" onclick="searchStops()">Search Stops</button>
+
+                <div class="input-group" style="margin-top: 20px;">
+                    <label>🔍 Search Routes</label>
+                    <input type="text" id="searchRoutes" placeholder="Search routes">
+                </div>
+                <button class="btn" onclick="searchRoutes()">Search Routes</button>
+
+                <div id="searchResults" style="margin-top: 20px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="map-container">
+        <button id="toggle-sidebar" onclick="toggleSidebar()">☰</button>
+        <button class="locate-btn" onclick="locateUser()" title="Find My Location">📍</button>
+        <div id="map"></div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    // Configuration
+    const API_BASE = 'http://localhost:8080';
+    let map;
+    let vehicleMarkers = {};
+    let stopMarkers = {};
+    let userMarker = null;
+    let eventSource = null;
+
+    // Initialize Map
+    function initMap() {
+        map = L.map('map').setView([28.6139, 77.2090], 12);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors',
+            maxZoom: 19
+        }).addTo(map);
+
+        // Create custom icons
+        window.busIcon = L.divIcon({
+            html: '<div style="font-size: 24px;">🚌</div>',
+            iconSize: [30, 30],
+            iconAnchor: [15, 15],
+            popupAnchor: [0, -15],
+            className: 'bus-icon'
+        });
+
+        window.busStopIcon = L.divIcon({
+            html: '<div style="font-size: 20px;">🚏</div>',
+            iconSize: [25, 25],
+            iconAnchor: [12, 12],
+            popupAnchor: [0, -12],
+            className: 'stop-icon'
+        });
+
+        // Start listening for vehicle updates
+        connectSSE();
+        updateStatus();
+        setInterval(updateStatus, 10000);
     }
 
-    // --- Main App Component ---
-    const App = () => {
-        const [vehicles, setVehicles] = useState({});
-        const [allStops, setAllStops] = useState([]);
-        const [sidebarView, setSidebarView] = useState('hidden');
-        const [connectionStatus, setConnectionStatus] = useState('connecting');
-
-        const [selectedVehicle, setSelectedVehicle] = useState(null);
-        const [selectedStop, setSelectedStop] = useState(null);
-
-        const [tripSchedule, setTripSchedule] = useState({ loading: false, data: [] });
-        const [routesForStop, setRoutesForStop] = useState({ loading: false, data: [] });
-        const [routePath, setRoutePath] = useState([]);
-        const lastUpdateRef = useRef(null);
-        const mapRef = useRef(null);
-
-        useEffect(() => {
-            fetch('/api/stops/all')
-                .then(res => res.json())
-                .then(setAllStops)
-                .catch(err => console.error("Failed to fetch stops:", err));
-        }, []);
-
-        useEffect(() => {
-            // SSE connection logic remains the same
-            let eventSource;
-            let reconnectTimeout;
-
-            function connect() {
-                eventSource = new EventSource('/vehicles');
-                setConnectionStatus('connecting');
-                eventSource.onopen = () => setConnectionStatus('live');
-                eventSource.onmessage = e => {
-                    const eventData = JSON.parse(e.data);
-                    if (eventData.type === 'vehicles') {
-                        setVehicles(prev => {
-                            const updated = { ...prev };
-                            eventData.payload.forEach(v => { updated[v.vehicleId] = v; });
-                            return updated;
-                        });
-                        lastUpdateRef.current = Date.now();
-                        if (connectionStatus !== 'live') setConnectionStatus('live');
-                    }
-                };
-                eventSource.addEventListener('heartbeat', () => {
-                    lastUpdateRef.current = Date.now();
-                    if (connectionStatus !== 'live') setConnectionStatus('live');
-                });
-                eventSource.onerror = () => {
-                    setConnectionStatus('disconnected');
-                    eventSource.close();
-                    reconnectTimeout = setTimeout(connect, 5000);
-                };
-            }
-
-            connect();
-
-            const staleCheckInterval = setInterval(() => {
-                if (lastUpdateRef.current && (Date.now() - lastUpdateRef.current > 45000)) {
-                   if (connectionStatus === 'live') setConnectionStatus('stale');
-                }
-            }, 10000);
-
-            return () => {
-                if (eventSource) eventSource.close();
-                clearTimeout(reconnectTimeout);
-                clearInterval(staleCheckInterval);
-            };
-        }, [connectionStatus]);
-
-        const handleSelectVehicle = useCallback((vehicle) => {
-            setSelectedVehicle(vehicle);
-            setSelectedStop(null);
-            setSidebarView('vehicle-details');
-            setTripSchedule({ loading: true, data: [] });
-            setRoutePath([]);
-            if (vehicle.tripId) {
-                // CORRECTED: This now points to the correct, existing endpoint in GtfsController.
-                fetch(`/api/trips/${vehicle.tripId}/schedule`)
-                    .then(res => res.json())
-                    .then(data => setTripSchedule({ loading: false, data: data }))
-                    .catch(() => setTripSchedule({ loading: false, data: [] }));
-            }
-            if (vehicle.routeId) {
-                 fetch(`/api/routes/${vehicle.routeId}/path`)
-                    .then(res => res.json())
-                    .then(setRoutePath)
-                    .catch(err => console.error("Failed to fetch route path", err));
-            }
-        }, []);
-
-        const handleSelectStop = useCallback((stop) => {
-            setSelectedStop(stop);
-            setSelectedVehicle(null);
-            setSidebarView('stop-details');
-            setRoutesForStop({ loading: true, data: [] });
-            setRoutePath([]);
-            fetch(`/api/stops/${stop.stopId}/routes`)
-                .then(res => res.json())
-                .then(data => setRoutesForStop({ loading: false, data }))
-                .catch(() => setRoutesForStop({ loading: false, data: [] }));
-
-            if (mapRef.current) {
-                mapRef.current.setView([stop.stopLat, stop.stopLon], 16);
-            }
-        }, []);
-
-        const handleSelectRouteFromStop = useCallback((route) => {
-            fetch(`/api/routes/${route.routeId}/path`)
-                .then(res => res.json())
-                .then(setRoutePath)
-                .catch(err => console.error("Failed to fetch route path for stop", err));
-        }, []);
-
-        const clearSelection = () => {
-            setSelectedVehicle(null);
-            setSelectedStop(null);
-            setSidebarView('hidden');
-            setRoutePath([]);
-            setTripSchedule({ loading: false, data: [] });
-            setRoutesForStop({ loading: false, data: [] });
-        };
-
-        const vehicleList = useMemo(() => Object.values(vehicles), [vehicles]);
-
-        return (
-            <div className="relative h-screen w-screen">
-                <Sidebar
-                    view={sidebarView} vehicle={selectedVehicle} stop={selectedStop}
-                    tripSchedule={tripSchedule} routesForStop={routesForStop}
-                    onSelectRoute={handleSelectRouteFromStop} onClear={clearSelection}
-                />
-                 <Search onStopSelect={handleSelectStop} />
-                <MapComponent
-                    mapRef={mapRef}
-                    vehicles={vehicleList} allStops={allStops}
-                    onSelectVehicle={handleSelectVehicle} onSelectStop={handleSelectStop}
-                    selectedVehicle={selectedVehicle}
-                    routePath={routePath} tripScheduleStops={tripSchedule.data}
-                    selectedStop={selectedStop}
-                />
-                <StatusIndicator status={connectionStatus} />
-            </div>
-        );
-    };
-
-    // --- Fare Calculator ---
-    const FareCalculator = ({ fromStop, route }) => {
-        const [destinationStops, setDestinationStops] = useState([]);
-        const [selectedDest, setSelectedDest] = useState('');
-        const [fare, setFare] = useState(null);
-        const [loading, setLoading] = useState(false);
-
-        useEffect(() => {
-            if (route) {
-                fetch(`/api/routes/${route.routeId}/path`)
-                    .then(res => res.json())
-                    .then(stops => setDestinationStops(stops))
-                    .catch(() => setDestinationStops([]));
-            }
-        }, [route]);
-
-        const handleCalculate = () => {
-            if (!selectedDest || !fromStop || !route) return;
-            setLoading(true);
-            setFare(null);
-            fetch(`/api/fare?routeId=${route.routeId}&fromStopId=${fromStop.stopId}&toStopId=${selectedDest}`)
-                .then(res => res.ok ? res.json() : Promise.reject('No fare found'))
-                .then(data => {
-                    setFare(data.price !== null ? `₹${data.price}`: 'Not available');
-                    setLoading(false);
-                })
-                .catch(() => {
-                    setFare('Not available');
-                    setLoading(false);
-                });
-        };
-
-        return (
-            <div className="mt-4 p-4 border-t">
-                <h4 className="font-semibold text-gray-700 mb-2">Fare Calculator</h4>
-                <p className="text-sm mb-2">Route: <span className="font-bold">{route.routeShortName}</span></p>
-                <div className="space-y-3">
-                    <select
-                        value={selectedDest}
-                        onChange={e => setSelectedDest(e.target.value)}
-                        className="w-full p-2 border rounded-md bg-white text-sm"
-                    >
-                        <option value="">Select destination stop</option>
-                        {destinationStops.filter(s => s.stopId !== fromStop.stopId).map(s => (
-                            <option key={s.stopId} value={s.stopId}>{s.stopName}</option>
-                        ))}
-                    </select>
-                    <button onClick={handleCalculate} disabled={!selectedDest || loading} className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400">
-                        {loading ? 'Calculating...' : 'Get Fare'}
-                    </button>
-                    {fare && <p className="text-center font-bold text-lg mt-2">Fare: {fare}</p>}
-                </div>
-            </div>
-        );
-    };
-
-
-    // --- Sidebar Component ---
-    const Sidebar = ({ view, vehicle, stop, tripSchedule, routesForStop, onSelectRoute, onClear }) => {
-        const isVisible = view !== 'hidden';
-        const [selectedRouteForFare, setSelectedRouteForFare] = useState(null);
-
-        const title = view === 'vehicle-details' ? `Route ${vehicle?.routeName || 'N/A'}` :
-                      view === 'stop-details' ? `Stop Details` : 'Details';
-
-        const handleRouteSelect = (route) => {
-            onSelectRoute(route);
-            setSelectedRouteForFare(route);
+    // SSE Connection
+    function connectSSE() {
+        if (eventSource) {
+            eventSource.close();
         }
 
-        return (
-            <div className={`sidebar absolute top-0 left-0 h-full w-80 md:w-96 bg-white shadow-lg z-[1000] transform ${isVisible ? 'translate-x-0' : '-translate-x-full'}`}>
-                <div className="flex flex-col h-full">
-                    <div className="p-4 border-b flex justify-between items-center">
-                        <h2 className="text-xl font-bold text-gray-800">{title}</h2>
-                        <button onClick={onClear} className="p-1 rounded-full hover:bg-gray-200" aria-label="Close details">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                        </button>
+        eventSource = new EventSource(`${API_BASE}/vehicles`);
+
+        eventSource.addEventListener('connected', (e) => {
+            console.log('SSE Connected:', e.data);
+        });
+
+        eventSource.addEventListener('vehicle-update', (e) => {
+            try {
+                const vehicles = JSON.parse(e.data);
+                updateVehicles(vehicles);
+            } catch (err) {
+                console.error('Error parsing vehicle data:', err);
+            }
+        });
+
+        eventSource.onerror = (err) => {
+            console.error('SSE Error:', err);
+            setTimeout(connectSSE, 5000);
+        };
+    }
+
+    // Update Vehicles on Map
+    function updateVehicles(vehicles) {
+        const currentIds = new Set();
+
+        vehicles.forEach(vehicle => {
+            currentIds.add(vehicle.vehicleId);
+
+            if (vehicleMarkers[vehicle.vehicleId]) {
+                // Update existing marker
+                vehicleMarkers[vehicle.vehicleId].setLatLng([vehicle.lat, vehicle.lon]);
+            } else {
+                // Create new marker
+                const marker = L.marker([vehicle.lat, vehicle.lon], {
+                    icon: busIcon
+                }).addTo(map);
+
+                const popupContent = `
+                    <div class="popup-content">
+                        <div class="popup-title">🚌 ${vehicle.routeName || vehicle.routeId}</div>
+                        <div class="popup-detail"><strong>Vehicle:</strong> ${vehicle.vehicleId}</div>
+                        <div class="popup-detail"><strong>Speed:</strong> ${vehicle.speed ? vehicle.speed.toFixed(1) + ' km/h' : 'N/A'}</div>
+                        <div class="popup-detail"><strong>Occupancy:</strong> ${vehicle.occupancyStatus || 'Unknown'}</div>
+                        ${vehicle.tripHeadsign ? `<div class="popup-detail"><strong>Destination:</strong> ${vehicle.tripHeadsign}</div>` : ''}
                     </div>
-                    <div className="flex-1 overflow-y-auto sidebar-content">
-                        {view === 'vehicle-details' && (
-                            <>
-                                <div className="p-4 bg-gray-50 border-b">
-                                    <p className="text-sm text-gray-600">Vehicle ID</p>
-                                    <p className="font-mono text-gray-800">{vehicle?.vehicleId}</p>
-                                    <p className="text-sm text-gray-600 mt-2">Trip Headsign</p>
-                                    <p className="font-semibold text-gray-800">{vehicle?.tripHeadsign || "Not available"}</p>
-                                </div>
-                                {tripSchedule.loading ? <div className="flex justify-center p-8"><div className="loader"></div></div> :
-                                 !tripSchedule.data || tripSchedule.data.length === 0 ? <p className="p-4 text-gray-500">No schedule found for this trip.</p> :
-                                <ul>
-                                    {tripSchedule.data.map((item, index) => (
-                                        <li key={index} className="border-b p-3 flex items-center">
-                                            <div className="text-sm font-semibold text-gray-600 w-16">{item?.departureTime?.substring(0,5)}</div>
-                                            <div className="pl-3 border-l-2 border-gray-300">
-                                                <p className="font-medium text-gray-800">{item?.stopName}</p>
-                                            </div>
-                                        </li>
-                                    ))}
-                                </ul>
-                                }
-                            </>
-                        )}
-                         {view === 'stop-details' && (
-                            <>
-                                <h3 className="p-4 font-bold text-lg text-gray-800">{stop?.stopName}</h3>
-                                {routesForStop.loading ? <div className="flex justify-center p-8"><div className="loader"></div></div> :
-                                 !routesForStop.data || routesForStop.data.length === 0 ? <p className="p-4 text-gray-500">No routes found for this stop.</p> :
-                                <ul className="px-2">
-                                    {routesForStop.data.map(route => (
-                                        <li key={route.routeId}>
-                                            <button onClick={() => handleRouteSelect(route)} className="w-full text-left p-2.5 my-1 rounded-lg hover:bg-gray-100 focus:bg-blue-100 focus:outline-none transition-colors">
-                                                <span className="font-bold bg-blue-600 text-white rounded px-2 py-1 text-sm w-14 inline-block text-center mr-3">{route.routeShortName}</span>
-                                                <span className="text-sm text-gray-700">{route.routeLongName}</span>
-                                            </button>
-                                        </li>
-                                    ))}
-                                </ul>
-                                }
-                                {selectedRouteForFare && <FareCalculator fromStop={stop} route={selectedRouteForFare} />}
-                            </>
-                        )}
+                `;
+                marker.bindPopup(popupContent);
+                vehicleMarkers[vehicle.vehicleId] = marker;
+            }
+        });
+
+        // Remove old markers
+        Object.keys(vehicleMarkers).forEach(id => {
+            if (!currentIds.has(id)) {
+                map.removeLayer(vehicleMarkers[id]);
+                delete vehicleMarkers[id];
+            }
+        });
+    }
+
+    // Update Status
+    async function updateStatus() {
+        try {
+            const response = await fetch(`${API_BASE}/api/status`);
+            const data = await response.json();
+            document.getElementById('vehicleCount').textContent = data.activeVehicleCount || 0;
+            document.getElementById('feedAge').textContent = data.feedAgeSeconds >= 0 ? data.feedAgeSeconds : '--';
+        } catch (err) {
+            console.error('Error fetching status:', err);
+        }
+    }
+
+    // Find Nearby Stops
+    async function findNearbyStops() {
+        const lat = parseFloat(document.getElementById('userLat').value);
+        const lon = parseFloat(document.getElementById('userLon').value);
+        const limit = parseInt(document.getElementById('nearbyLimit').value);
+
+        if (!lat || !lon) {
+            alert('Please enter valid coordinates');
+            return;
+        }
+
+        const results = document.getElementById('nearbyResults');
+        results.innerHTML = '<div class="loading"><div class="spinner"></div>Loading...</div>';
+
+        try {
+            const response = await fetch(`${API_BASE}/api/transit/stops/nearby?lat=${lat}&lon=${lon}&limit=${limit}`);
+            const stops = await response.json();
+
+            // Add user marker
+            if (userMarker) map.removeLayer(userMarker);
+            userMarker = L.marker([lat, lon], {
+                icon: L.divIcon({
+                    html: '<div style="font-size: 24px;">📍</div>',
+                    iconSize: [30, 30],
+                    iconAnchor: [15, 15]
+                })
+            }).addTo(map);
+            userMarker.bindPopup('<strong>Your Location</strong>').openPopup();
+            map.setView([lat, lon], 14);
+
+            // Clear old stop markers
+            Object.values(stopMarkers).forEach(m => map.removeLayer(m));
+            stopMarkers = {};
+
+            if (stops.length === 0) {
+                results.innerHTML = '<div class="empty-state">No stops found nearby</div>';
+                return;
+            }
+
+            results.innerHTML = stops.map(stop => {
+                // Add stop marker
+                const marker = L.marker([stop.lat, stop.lon], {
+                    icon: busStopIcon
+                }).addTo(map);
+                marker.bindPopup(`
+                    <div class="popup-content">
+                        <div class="popup-title">🚏 ${stop.stopName}</div>
+                        <div class="popup-detail"><strong>ID:</strong> ${stop.stopId}</div>
+                        <div class="popup-detail"><strong>Distance:</strong> ${stop.distanceKm.toFixed(2)} km</div>
                     </div>
+                `);
+                stopMarkers[stop.stopId] = marker;
+
+                return `
+                    <div class="result-card" onclick="showStop('${stop.stopId}', ${stop.lat}, ${stop.lon})">
+                        <div class="result-title">🚏 ${stop.stopName}</div>
+                        <div class="result-detail">📍 ${stop.distanceKm.toFixed(2)} km away</div>
+                        <div class="result-detail">ID: ${stop.stopId}</div>
+                        <button class="result-badge" onclick="event.stopPropagation(); getNextBuses('${stop.stopId}')">Next Buses</button>
+                    </div>
+                `;
+            }).join('');
+        } catch (err) {
+            results.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
+        }
+    }
+
+    // Get Next Buses
+    async function getNextBuses(stopId) {
+        const results = document.getElementById('nearbyResults');
+        results.innerHTML = '<div class="loading"><div class="spinner"></div>Loading next buses...</div>';
+
+        try {
+            const response = await fetch(`${API_BASE}/api/transit/stops/${stopId}/next-buses?limit=5`);
+            const buses = await response.json();
+
+            if (buses.length === 0) {
+                results.innerHTML = '<div class="empty-state">No upcoming buses for this stop</div>';
+                return;
+            }
+
+            results.innerHTML = `
+                <h3 style="margin-bottom: 15px; color: #667eea;">Next Buses at ${stopId}</h3>
+                ${buses.map(bus => `
+                    <div class="result-card">
+                        <div class="result-title">🚌 ${bus.routeName}</div>
+                        <div class="result-detail">⏰ Arrives: ${bus.arrivalTime}</div>
+                        <div class="result-detail">🎯 Destination: ${bus.headsign || 'Unknown'}</div>
+                        <span class="result-badge">${bus.minutesAway} min</span>
+                    </div>
+                `).join('')}
+            `;
+        } catch (err) {
+            results.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
+        }
+    }
+
+    // Plan Route
+    async function planRoute() {
+        const origin = document.getElementById('originStop').value.trim();
+        const dest = document.getElementById('destStop').value.trim();
+
+        if (!origin || !dest) {
+            alert('Please enter both origin and destination stop IDs');
+            return;
+        }
+
+        const results = document.getElementById('routeResults');
+        results.innerHTML = '<div class="loading"><div class="spinner"></div>Finding routes...</div>';
+
+        try {
+            const response = await fetch(`${API_BASE}/api/transit/routes/plan?origin=${origin}&dest=${dest}`);
+
+            if (response.status === 204) {
+                results.innerHTML = '<div class="empty-state">No routes found between these stops</div>';
+                return;
+            }
+
+            const routes = await response.json();
+
+            results.innerHTML = routes.map(route => `
+                <div class="result-card" onclick="showRouteDetails('${route.routeId}')">
+                    <div class="result-title">🚌 ${route.routeName}</div>
+                    <div class="result-detail">📍 ${route.stops.length} stops</div>
+                    <div class="result-detail">⏱️ ${route.estimatedMinutes} minutes</div>
+                    ${route.stops.map(stop => `<span class="result-badge">${stop}</span>`).join('')}
                 </div>
-            </div>
-        );
-    };
+            `).join('');
+        } catch (err) {
+            results.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
+        }
+    }
 
-    // --- Map Component ---
-    const MapComponent = ({ mapRef, vehicles, allStops, onSelectVehicle, onSelectStop, selectedVehicle, routePath, tripScheduleStops, selectedStop }) => {
-        const vehicleMarkersRef = useRef({});
-        const stopMarkersRef = useRef({});
-        const routeLayerRef = useRef(null);
-        const stopsLayerRef = useRef(null); // Changed to marker cluster group
+    // Calculate Fare
+    async function calculateFare() {
+        const origin = document.getElementById('originStop').value.trim();
+        const dest = document.getElementById('destStop').value.trim();
 
-        useEffect(() => {
-            if (!mapRef.current) {
-                mapRef.current = L.map('map', { zoomControl: false }).setView([28.6139, 77.2090], 12);
-                L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { attribution: '&copy; OpenStreetMap &copy; CARTO' }).ad(mapRef.current);
-                L.control.zoom({ position: 'topright' }).ad(mapRef.current);
-                routeLayerRef.current = L.layerGroup().ad(mapRef.current);
-                stopsLayerRef.current = L.markerClusterGroup({
-                     chunkedLoading: true,
-                     maxClusterRadius: 60,
-                     disableClusteringAtZoom: 15
-                }).ad(mapRef.current);
+        if (!origin || !dest) {
+            alert('Please enter both origin and destination stop IDs');
+            return;
+        }
+
+        const results = document.getElementById('routeResults');
+        results.innerHTML = '<div class="loading"><div class="spinner"></div>Calculating fare...</div>';
+
+        try {
+            const response = await fetch(`${API_BASE}/api/transit/fare?origin=${origin}&dest=${dest}`);
+            const fare = await response.json();
+
+            results.innerHTML = `
+                <div class="result-card">
+                    <div class="result-title">💰 Fare Information</div>
+                    <div class="result-detail">Amount: ${fare.amount} ${fare.currency}</div>
+                    <div class="result-detail">From: ${origin}</div>
+                    <div class="result-detail">To: ${dest}</div>
+                    ${fare.transfers ? `<div class="result-detail">Transfers: ${fare.transfers}</div>` : ''}
+                </div>
+            `;
+        } catch (err) {
+            results.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
+        }
+    }
+
+    // Search Stops
+    async function searchStops() {
+        const query = document.getElementById('searchStops').value.trim();
+        if (!query) {
+            alert('Please enter a search term');
+            return;
+        }
+
+        const results = document.getElementById('searchResults');
+        results.innerHTML = '<div class="loading"><div class="spinner"></div>Searching...</div>';
+
+        try {
+            const response = await fetch(`${API_BASE}/api/transit/stops/search?q=${encodeURIComponent(query)}`);
+            const stops = await response.json();
+
+            if (stops.length === 0) {
+                results.innerHTML = '<div class="empty-state">No stops found</div>';
+                return;
             }
-        }, []);
 
-        useEffect(() => {
-            stopsLayerRef.current.clearLayers();
-            const stopMarkers = allStops.map(stop => {
-                const marker = L.marker([stop.stopLat, stop.stopLon], {
-                    icon: L.divIcon({ className: 'stop-marker-icon', iconSize: [8, 8] }), zIndexOffset: 100
-                }).on('click', () => onSelectStop(stop));
-                stopMarkersRef.current[stop.stopId] = marker;
-                return marker;
-            });
-            stopsLayerRef.current.addLayers(stopMarkers);
-        }, [allStops, onSelectStop]);
+            results.innerHTML = stops.map(stop => `
+                <div class="result-card" onclick="showStop('${stop.stopId}', ${stop.stopLat}, ${stop.stopLon})">
+                    <div class="result-title">🚏 ${stop.stopName}</div>
+                    <div class="result-detail">ID: ${stop.stopId}</div>
+                    <div class="result-detail">Code: ${stop.stopCode || 'N/A'}</div>
+                    <button class="result-badge" onclick="event.stopPropagation(); getNextBuses('${stop.stopId}')">Next Buses</button>
+                </div>
+            `).join('');
+        } catch (err) {
+            results.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
+        }
+    }
 
+    // Search Routes
+    async function searchRoutes() {
+        const query = document.getElementById('searchRoutes').value.trim();
+        if (!query) {
+            alert('Please enter a search term');
+            return;
+        }
 
-        useEffect(() => {
-            const tripStopIds = new Set(tripScheduleStops.map(s => s?.stopId));
-             Object.entries(stopMarkersRef.current).forEach(([id, marker]) => {
-                let className = 'stop-marker-icon';
-                if (selectedStop?.stopId === id) className += ' selected';
-                else if (tripStopIds.has(id)) className += ' highlighted';
-                marker.setIcon(L.divIcon({ className, iconSize: [8, 8] }));
-            });
-        }, [tripScheduleStops, selectedStop]);
+        const results = document.getElementById('searchResults');
+        results.innerHTML = '<div class="loading"><div class="spinner"></div>Searching...</div>';
 
+        try {
+            const response = await fetch(`${API_BASE}/api/transit/routes/search?q=${encodeURIComponent(query)}`);
+            const routes = await response.json();
 
-        useEffect(() => {
-            routeLayerRef.current.clearLayers();
-            if (routePath && routePath.length > 0) {
-                const latLngs = routePath.map(p => [p.stopLat, p.stopLon]);
-                const polyline = L.polyline(latLngs, { color: '#1a73e8', weight: 5, opacity: 0.7 });
-                routeLayerRef.current.addLayer(polyline);
-                if (mapRef.current && latLngs.length > 0) {
-                    mapRef.current.fitBounds(L.latLngBounds(latLngs).pad(0.1));
-                }
+            if (routes.length === 0) {
+                results.innerHTML = '<div class="empty-state">No routes found</div>';
+                return;
             }
-        }, [routePath]);
 
-        useEffect(() => {
-            const vehicleIdsOnMap = new Set(Object.keys(vehicleMarkersRef.current));
-            vehicles.forEach(vehicle => {
-                const { vehicleId, lat, lon, routeName } = vehicle;
-                vehicleIdsOnMap.delete(vehicleId);
-                const isSelected = selectedVehicle?.vehicleId === vehicleId;
-                const iconHtml = `<div>${routeName || ''}</div>`;
-                const iconClassName = `bus-marker ${isSelected ? 'selected' : ''}`;
-                const busIcon = L.divIcon({ className: iconClassName, html: iconHtml, iconSize: [32, 32] });
+            results.innerHTML = routes.map(route => `
+                <div class="result-card" onclick="showRouteDetails('${route.routeId}')">
+                    <div class="result-title">🚌 ${route.routeShortName}</div>
+                    <div class="result-detail">${route.routeLongName}</div>
+                    <div class="result-detail">ID: ${route.routeId}</div>
+                    <span class="result-badge">Type: ${route.routeType}</span>
+                </div>
+            `).join('');
+        } catch (err) {
+            results.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
+        }
+    }
 
-                if (vehicleMarkersRef.current[vehicleId]) {
-                    vehicleMarkersRef.current[vehicleId].setLatLng([lat, lon]).setIcon(busIcon);
-                } else {
-                    const newMarker = L.marker([lat, lon], { icon: busIcon, zIndexOffset: 1000 })
-                        .on('click', () => onSelectVehicle(vehicle))
-                        .ad(mapRef.current);
-                    vehicleMarkersRef.current[vehicleId] = newMarker;
+    // Show Stop on Map
+    function showStop(stopId, lat, lon) {
+        map.setView([lat, lon], 16);
+        if (stopMarkers[stopId]) {
+            stopMarkers[stopId].openPopup();
+        }
+    }
+
+    // Show Route Details
+    async function showRouteDetails(routeId) {
+        try {
+            const response = await fetch(`${API_BASE}/api/transit/routes/${routeId}/details`);
+            const details = await response.json();
+
+            alert(`Route: ${details.routeName}\nStops: ${details.stops.length}\nDescription: ${details.description || 'N/A'}`);
+        } catch (err) {
+            alert('Error fetching route details');
+        }
+    }
+
+    // Locate User
+    function locateUser() {
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const lat = position.coords.latitude;
+                    const lon = position.coords.longitude;
+                    document.getElementById('userLat').value = lat.toFixed(6);
+                    document.getElementById('userLon').value = lon.toFixed(6);
+                    map.setView([lat, lon], 14);
+                    findNearbyStops();
+                },
+                (error) => {
+                    alert('Unable to get your location: ' + error.message);
                 }
-            });
-            // remove vehicles that are no longer in the feed
-            vehicleIdsOnMap.forEach(id => {
-                if(vehicleMarkersRef.current[id]) {
-                    vehicleMarkersRef.current[id].remove();
-                    delete vehicleMarkersRef.current[id];
-                }
-            })
+            );
+        } else {
+            alert('Geolocation is not supported by your browser');
+        }
+    }
 
-        }, [vehicles, onSelectVehicle, selectedVehicle]);
+    // Toggle Sidebar
+    function toggleSidebar() {
+        document.getElementById('sidebar').classList.toggle('collapsed');
+    }
 
-        return <div id="map" className="h-full w-full z-0"></div>;
-    };
+    // Tab Switching
+    document.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
 
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<App />);
+            tab.classList.add('active');
+            document.getElementById(tab.dataset.tab + '-panel').classList.add('active');
+        });
+    });
+
+    // Initialize
+    window.onload = initMap;
 </script>
 </body>
 </html>
-

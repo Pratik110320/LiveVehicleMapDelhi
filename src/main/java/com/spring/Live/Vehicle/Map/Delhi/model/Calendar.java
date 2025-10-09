@@ -46,6 +46,34 @@ public class Calendar {
     public Calendar() {
     }
 
+    public boolean isMonday() {
+        return monday == 1;
+    }
+
+    public boolean isTuesday() {
+        return tuesday == 1;
+    }
+
+    public boolean isWednesday() {
+        return wednesday == 1;
+    }
+
+    public boolean isThursday() {
+        return thursday == 1;
+    }
+
+    public boolean isFriday() {
+        return friday == 1;
+    }
+
+    public boolean isSaturday() {
+        return saturday == 1;
+    }
+
+    public boolean isSunday() {
+        return sunday == 1;
+    }
+
     public String getServiceId() {
         return serviceId;
     }
