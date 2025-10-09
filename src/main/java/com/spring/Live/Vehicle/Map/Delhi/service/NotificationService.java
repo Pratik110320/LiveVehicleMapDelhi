@@ -2,7 +2,7 @@ package com.spring.Live.Vehicle.Map.Delhi.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.spring.Live.Vehicle.Map.Delhi.model.VehicleDto;
+import com.spring.Live.Vehicle.Map.Delhi.model.Vehicle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -32,7 +32,7 @@ public class NotificationService {
         }
     }
 
-    public void sendVehicleUpdate(List<VehicleDto> vehicles) {
+    public void sendVehicleUpdate(List<Vehicle> vehicles) {
         String jsonData;
         try {
             Map<String, Object> eventData = Map.of("type", "vehicles", "payload", vehicles);
@@ -44,15 +44,15 @@ public class NotificationService {
 
         // Send as unnamed event so browser `EventSource.onmessage` receives it
         SseEmitter.SseEventBuilder event = SseEmitter.event().data(jsonData);
-        sendToAllEmitters(event);
+        senAllEmitters(event);
     }
 
     public void sendHeartbeat() {
         SseEmitter.SseEventBuilder event = SseEmitter.event().name("heartbeat").data("ping");
-        sendToAllEmitters(event);
+        senAllEmitters(event);
     }
 
-    private void sendToAllEmitters(SseEmitter.SseEventBuilder event) {
+    private void senAllEmitters(SseEmitter.SseEventBuilder event) {
         for (SseEmitter emitter : emitters) {
             try {
                 emitter.send(event);

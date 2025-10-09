@@ -434,14 +434,14 @@
         useEffect(() => {
             if (!mapRef.current) {
                 mapRef.current = L.map('map', { zoomControl: false }).setView([28.6139, 77.2090], 12);
-                L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { attribution: '&copy; OpenStreetMap &copy; CARTO' }).addTo(mapRef.current);
-                L.control.zoom({ position: 'topright' }).addTo(mapRef.current);
-                routeLayerRef.current = L.layerGroup().addTo(mapRef.current);
+                L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { attribution: '&copy; OpenStreetMap &copy; CARTO' }).ad(mapRef.current);
+                L.control.zoom({ position: 'topright' }).ad(mapRef.current);
+                routeLayerRef.current = L.layerGroup().ad(mapRef.current);
                 stopsLayerRef.current = L.markerClusterGroup({
                      chunkedLoading: true,
                      maxClusterRadius: 60,
                      disableClusteringAtZoom: 15
-                }).addTo(mapRef.current);
+                }).ad(mapRef.current);
             }
         }, []);
 
@@ -496,7 +496,7 @@
                 } else {
                     const newMarker = L.marker([lat, lon], { icon: busIcon, zIndexOffset: 1000 })
                         .on('click', () => onSelectVehicle(vehicle))
-                        .addTo(mapRef.current);
+                        .ad(mapRef.current);
                     vehicleMarkersRef.current[vehicleId] = newMarker;
                 }
             });

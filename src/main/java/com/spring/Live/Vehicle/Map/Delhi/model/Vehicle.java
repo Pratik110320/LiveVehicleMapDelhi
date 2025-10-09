@@ -1,7 +1,7 @@
 package com.spring.Live.Vehicle.Map.Delhi.model;
 
 
-public class VehicleDto {
+public class Vehicle {
     private String vehicleId;
     private String tripId;
     private String routeId;
@@ -14,7 +14,7 @@ public class VehicleDto {
     private String occupancyStatus;
     private String vehicleCategory;
 
-    public VehicleDto() {}
+    public Vehicle() {}
 
 
     // getters and setters
