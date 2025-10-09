@@ -58,8 +58,9 @@
         }
 
         .status-bar {
-            display: flex;
-            justify-content: space-around;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
             padding: 15px;
             background: #f8f9fa;
             border-bottom: 1px solid #e0e0e0;
@@ -73,6 +74,11 @@
             font-size: 24px;
             font-weight: bold;
             color: #667eea;
+            transition: color 0.3s;
+        }
+
+        .status-value.warning {
+            color: #dc3545;
         }
 
         .status-label {
@@ -370,6 +376,10 @@
                 <div class="status-value" id="feedAge">--</div>
                 <div class="status-label">Feed Age (s)</div>
             </div>
+            <div class="status-item">
+                <div class="status-value" id="mapMarkers">0</div>
+                <div class="status-label">On Map</div>
+            </div>
         </div>
 
         <div class="tabs">
@@ -458,18 +468,18 @@
             maxZoom: 19
         }).addTo(map);
 
-        // Create custom icons
+        // Create custom icons with better visibility
         window.busIcon = L.divIcon({
-            html: '<div style="font-size: 24px;">🚌</div>',
-            iconSize: [30, 30],
-            iconAnchor: [15, 15],
-            popupAnchor: [0, -15],
+            html: '<div style="background: #667eea; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); font-size: 14px;">🚌</div>',
+            iconSize: [28, 28],
+            iconAnchor: [14, 14],
+            popupAnchor: [0, -14],
             className: 'bus-icon'
         });
 
         window.busStopIcon = L.divIcon({
-            html: '<div style="font-size: 20px;">🚏</div>',
-            iconSize: [25, 25],
+            html: '<div style="background: #28a745; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); font-size: 12px;">🚏</div>',
+            iconSize: [24, 24],
             iconAnchor: [12, 12],
             popupAnchor: [0, -12],
             className: 'stop-icon'
@@ -477,6 +487,11 @@
 
         // Start listening for vehicle updates
         connectSSE();
+
+        // Also poll via REST API as backup (every 5 seconds)
+        fetchVehiclesREST();
+        setInterval(fetchVehiclesREST, 5000);
+
         updateStatus();
         setInterval(updateStatus, 10000);
     }
@@ -493,14 +508,29 @@
             console.log('SSE Connected:', e.data);
         });
 
+        // Listen for vehicle-update events
         eventSource.addEventListener('vehicle-update', (e) => {
             try {
                 const vehicles = JSON.parse(e.data);
+                console.log('Received vehicles via SSE:', vehicles.length);
                 updateVehicles(vehicles);
             } catch (err) {
                 console.error('Error parsing vehicle data:', err);
             }
         });
+
+        // Also listen for generic message events (fallback)
+        eventSource.onmessage = (e) => {
+            try {
+                const data = JSON.parse(e.data);
+                if (Array.isArray(data)) {
+                    console.log('Received vehicles via onmessage:', data.length);
+                    updateVehicles(data);
+                }
+            } catch (err) {
+                console.log('Non-JSON message:', e.data);
+            }
+        };
 
         eventSource.onerror = (err) => {
             console.error('SSE Error:', err);
@@ -508,16 +538,42 @@
         };
     }
 
+    // Fetch vehicles via REST API (fallback)
+    async function fetchVehiclesREST() {
+        try {
+            const response = await fetch(`${API_BASE}/api/vehicles`);
+            const vehicles = await response.json();
+            console.log('Fetched vehicles via REST:', vehicles.length);
+            updateVehicles(vehicles);
+        } catch (err) {
+            console.error('Error fetching vehicles:', err);
+        }
+    }
+
     // Update Vehicles on Map
     function updateVehicles(vehicles) {
+        if (!Array.isArray(vehicles)) {
+            console.error('Invalid vehicles data:', vehicles);
+            return;
+        }
+
         const currentIds = new Set();
+        let addedCount = 0;
+        let updatedCount = 0;
 
         vehicles.forEach(vehicle => {
+            // Validate vehicle data
+            if (!vehicle.vehicleId || !vehicle.lat || !vehicle.lon) {
+                console.warn('Invalid vehicle data:', vehicle);
+                return;
+            }
+
             currentIds.add(vehicle.vehicleId);
 
             if (vehicleMarkers[vehicle.vehicleId]) {
                 // Update existing marker
                 vehicleMarkers[vehicle.vehicleId].setLatLng([vehicle.lat, vehicle.lon]);
+                updatedCount++;
             } else {
                 // Create new marker
                 const marker = L.marker([vehicle.lat, vehicle.lon], {
@@ -526,25 +582,36 @@
 
                 const popupContent = `
                     <div class="popup-content">
-                        <div class="popup-title">🚌 ${vehicle.routeName || vehicle.routeId}</div>
+                        <div class="popup-title">🚌 ${vehicle.routeName || vehicle.routeId || 'Unknown Route'}</div>
                         <div class="popup-detail"><strong>Vehicle:</strong> ${vehicle.vehicleId}</div>
                         <div class="popup-detail"><strong>Speed:</strong> ${vehicle.speed ? vehicle.speed.toFixed(1) + ' km/h' : 'N/A'}</div>
                         <div class="popup-detail"><strong>Occupancy:</strong> ${vehicle.occupancyStatus || 'Unknown'}</div>
                         ${vehicle.tripHeadsign ? `<div class="popup-detail"><strong>Destination:</strong> ${vehicle.tripHeadsign}</div>` : ''}
+                        <div class="popup-detail" style="font-size: 11px; color: #999; margin-top: 8px;">
+                            Lat: ${vehicle.lat.toFixed(6)}, Lon: ${vehicle.lon.toFixed(6)}
+                        </div>
                     </div>
                 `;
                 marker.bindPopup(popupContent);
                 vehicleMarkers[vehicle.vehicleId] = marker;
+                addedCount++;
             }
         });
 
         // Remove old markers
+        let removedCount = 0;
         Object.keys(vehicleMarkers).forEach(id => {
             if (!currentIds.has(id)) {
                 map.removeLayer(vehicleMarkers[id]);
                 delete vehicleMarkers[id];
+                removedCount++;
             }
         });
+
+        // Update marker count display
+        document.getElementById('mapMarkers').textContent = Object.keys(vehicleMarkers).length;
+
+        console.log(`Vehicles - Total: ${vehicles.length}, Added: ${addedCount}, Updated: ${updatedCount}, Removed: ${removedCount}, On Map: ${Object.keys(vehicleMarkers).length}`);
     }
 
     // Update Status
@@ -552,8 +619,23 @@
         try {
             const response = await fetch(`${API_BASE}/api/status`);
             const data = await response.json();
-            document.getElementById('vehicleCount').textContent = data.activeVehicleCount || 0;
+            const apiCount = data.activeVehicleCount || 0;
+            const mapCount = Object.keys(vehicleMarkers).length;
+
+            document.getElementById('vehicleCount').textContent = apiCount;
             document.getElementById('feedAge').textContent = data.feedAgeSeconds >= 0 ? data.feedAgeSeconds : '--';
+            document.getElementById('mapMarkers').textContent = mapCount;
+
+            // Highlight if there's a big mismatch
+            const countEl = document.getElementById('vehicleCount');
+            const mapEl = document.getElementById('mapMarkers');
+            if (apiCount > 0 && mapCount === 0) {
+                countEl.classList.add('warning');
+                mapEl.classList.add('warning');
+            } else {
+                countEl.classList.remove('warning');
+                mapEl.classList.remove('warning');
+            }
         } catch (err) {
             console.error('Error fetching status:', err);
         }
