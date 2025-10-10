@@ -184,6 +184,11 @@
             margin-top: 10px;
         }
 
+        .btn-success {
+            background: #28a745;
+            margin-top: 10px;
+        }
+
         /* Results */
         .result-card {
             background: white;
@@ -223,6 +228,15 @@
             font-size: 11px;
             margin-right: 6px;
             margin-top: 6px;
+        }
+
+        .result-badge.success {
+            background: #28a745;
+        }
+
+        .result-badge.warning {
+            background: #ffc107;
+            color: #212529;
         }
 
         .empty-state {
@@ -313,18 +327,38 @@
             margin: 4px 0;
         }
 
-        /* Scrollbar */
-        .tab-content::-webkit-scrollbar {
-            width: 6px;
+        /* Map Controls */
+        .map-controls {
+            position: absolute;
+            top: 80px;
+            left: 20px;
+            z-index: 1000;
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+            min-width: 200px;
         }
 
-        .tab-content::-webkit-scrollbar-track {
-            background: #f1f1f1;
+        .map-controls h3 {
+            margin-bottom: 10px;
+            color: #333;
+            font-size: 14px;
         }
 
-        .tab-content::-webkit-scrollbar-thumb {
-            background: #667eea;
-            border-radius: 3px;
+        .control-group {
+            margin-bottom: 10px;
+        }
+
+        .control-group label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .control-group input {
+            margin-right: 8px;
         }
 
         /* Location Button */
@@ -351,10 +385,32 @@
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
         }
 
+        /* Pin Mode Indicator */
+        .pin-mode {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            background: #ff6b6b;
+            color: white;
+            padding: 10px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+            display: none;
+        }
+
         @media (max-width: 768px) {
             #sidebar {
                 width: 100%;
                 max-width: 380px;
+            }
+            .map-controls {
+                top: 70px;
+                left: 10px;
+                right: 10px;
+                min-width: auto;
             }
         }
     </style>
@@ -392,17 +448,28 @@
             <!-- Nearby Tab -->
             <div class="tab-panel active" id="nearby-panel">
                 <div class="input-group">
-                    <label>📍 Your Location</label>
-                    <input type="number" id="userLat" placeholder="Latitude (e.g., 28.6139)" step="0.0001" value="28.6139">
+                    <label>📍 Click on map to set location, or use current location</label>
+                    <div style="display: flex; gap: 10px; margin-top: 10px;">
+                        <button class="btn" onclick="setPinMode('nearby')">Set Pin on Map</button>
+                        <button class="btn btn-secondary" onclick="useCurrentLocation()">Use My Location</button>
+                    </div>
                 </div>
+
                 <div class="input-group">
-                    <input type="number" id="userLon" placeholder="Longitude (e.g., 77.2090)" step="0.0001" value="77.2090">
+                    <label>Search Radius (km)</label>
+                    <input type="number" id="nearbyRadius" value="1.0" min="0.1" max="5.0" step="0.1">
                 </div>
+
                 <div class="input-group">
-                    <label>Number of Stops</label>
-                    <input type="number" id="nearbyLimit" value="5" min="1" max="20">
+                    <label>Selected Location</label>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" id="selectedLat" placeholder="Latitude" readonly style="flex: 1;">
+                        <input type="text" id="selectedLon" placeholder="Longitude" readonly style="flex: 1;">
+                    </div>
                 </div>
+
                 <button class="btn" onclick="findNearbyStops()">Find Nearby Stops</button>
+                <button class="btn btn-success" onclick="loadAllStops()">Show All Stops</button>
 
                 <div id="nearbyResults" style="margin-top: 20px;"></div>
             </div>
@@ -410,15 +477,31 @@
             <!-- Routes Tab -->
             <div class="tab-panel" id="routes-panel">
                 <div class="input-group">
-                    <label>🚏 Origin Stop ID</label>
-                    <input type="text" id="originStop" placeholder="e.g., STOP001">
+                    <label>📍 Set Origin & Destination Pins on Map</label>
+                    <div style="display: flex; gap: 10px; margin-top: 10px;">
+                        <button class="btn" onclick="setPinMode('origin')">Set Origin Pin</button>
+                        <button class="btn" onclick="setPinMode('destination')">Set Destination Pin</button>
+                    </div>
                 </div>
+
                 <div class="input-group">
-                    <label>🎯 Destination Stop ID</label>
-                    <input type="text" id="destStop" placeholder="e.g., STOP150">
+                    <label>Origin Location</label>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" id="originLat" placeholder="Origin Lat" readonly style="flex: 1;">
+                        <input type="text" id="originLon" placeholder="Origin Lon" readonly style="flex: 1;">
+                    </div>
                 </div>
-                <button class="btn" onclick="planRoute()">Plan Route</button>
-                <button class="btn btn-secondary" onclick="calculateFare()">Calculate Fare</button>
+
+                <div class="input-group">
+                    <label>Destination Location</label>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" id="destLat" placeholder="Dest Lat" readonly style="flex: 1;">
+                        <input type="text" id="destLon" placeholder="Dest Lon" readonly style="flex: 1;">
+                    </div>
+                </div>
+
+                <button class="btn" onclick="planRouteByPins()">Plan Route</button>
+                <button class="btn btn-secondary" onclick="calculateFareByPins()">Calculate Fare</button>
 
                 <div id="routeResults" style="margin-top: 20px;"></div>
             </div>
@@ -444,6 +527,35 @@
 
     <div id="map-container">
         <button id="toggle-sidebar" onclick="toggleSidebar()">☰</button>
+
+        <!-- Map Controls -->
+        <div class="map-controls">
+            <h3>Map Controls</h3>
+            <div class="control-group">
+                <label>
+                    <input type="checkbox" id="toggleBuses" checked onchange="toggleBusesVisibility()">
+                    Show Buses
+                </label>
+            </div>
+            <div class="control-group">
+                <label>
+                    <input type="checkbox" id="toggleStops" checked onchange="toggleStopsVisibility()">
+                    Show Stops
+                </label>
+            </div>
+            <div class="control-group">
+                <label>
+                    <input type="checkbox" id="toggleAllStops" onchange="toggleAllStopsVisibility()">
+                    Show All Stops
+                </label>
+            </div>
+        </div>
+
+        <!-- Pin Mode Indicator -->
+        <div class="pin-mode" id="pinModeIndicator">
+            Click on map to set pin
+        </div>
+
         <button class="locate-btn" onclick="locateUser()" title="Find My Location">📍</button>
         <div id="map"></div>
     </div>
@@ -456,8 +568,46 @@
     let map;
     let vehicleMarkers = {};
     let stopMarkers = {};
+    let allStopMarkers = {};
     let userMarker = null;
+    let originMarker = null;
+    let destinationMarker = null;
     let eventSource = null;
+    let currentPinMode = null;
+    let allStopsVisible = false;
+
+    // Custom Icons
+    const busIcon = L.divIcon({
+        html: '<div style="background: #667eea; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); font-size: 14px;">🚌</div>',
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
+        popupAnchor: [0, -14],
+        className: 'bus-icon'
+    });
+
+    const busStopIcon = L.divIcon({
+        html: '<div style="background: #28a745; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); font-size: 12px;">🚏</div>',
+        iconSize: [24, 24],
+        iconAnchor: [12, 12],
+        popupAnchor: [0, -12],
+        className: 'stop-icon'
+    });
+
+    const originIcon = L.divIcon({
+        html: '<div style="background: #007bff; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); font-size: 14px;">📍</div>',
+        iconSize: [30, 30],
+        iconAnchor: [15, 15],
+        popupAnchor: [0, -15],
+        className: 'origin-icon'
+    });
+
+    const destinationIcon = L.divIcon({
+        html: '<div style="background: #dc3545; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); font-size: 14px;">🎯</div>',
+        iconSize: [30, 30],
+        iconAnchor: [15, 15],
+        popupAnchor: [0, -15],
+        className: 'destination-icon'
+    });
 
     // Initialize Map
     function initMap() {
@@ -468,21 +618,11 @@
             maxZoom: 19
         }).addTo(map);
 
-        // Create custom icons with better visibility
-        window.busIcon = L.divIcon({
-            html: '<div style="background: #667eea; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); font-size: 14px;">🚌</div>',
-            iconSize: [28, 28],
-            iconAnchor: [14, 14],
-            popupAnchor: [0, -14],
-            className: 'bus-icon'
-        });
-
-        window.busStopIcon = L.divIcon({
-            html: '<div style="background: #28a745; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); font-size: 12px;">🚏</div>',
-            iconSize: [24, 24],
-            iconAnchor: [12, 12],
-            popupAnchor: [0, -12],
-            className: 'stop-icon'
+        // Add click listener for pin placement
+        map.on('click', function(e) {
+            if (currentPinMode) {
+                handleMapClick(e.latlng.lat, e.latlng.lng);
+            }
         });
 
         // Start listening for vehicle updates
@@ -494,8 +634,335 @@
 
         updateStatus();
         setInterval(updateStatus, 10000);
+
+        // Load all stops initially
+        loadAllStops();
     }
 
+    // Handle map click for pin placement
+    function handleMapClick(lat, lng) {
+        switch(currentPinMode) {
+            case 'nearby':
+                document.getElementById('selectedLat').value = lat.toFixed(6);
+                document.getElementById('selectedLon').value = lng.toFixed(6);
+
+                if (userMarker) map.removeLayer(userMarker);
+                userMarker = L.marker([lat, lng], { icon: originIcon })
+                    .addTo(map)
+                    .bindPopup('Selected Location')
+                    .openPopup();
+                break;
+
+            case 'origin':
+                document.getElementById('originLat').value = lat.toFixed(6);
+                document.getElementById('originLon').value = lng.toFixed(6);
+
+                if (originMarker) map.removeLayer(originMarker);
+                originMarker = L.marker([lat, lng], { icon: originIcon })
+                    .addTo(map)
+                    .bindPopup('Origin Location')
+                    .openPopup();
+                break;
+
+            case 'destination':
+                document.getElementById('destLat').value = lat.toFixed(6);
+                document.getElementById('destLon').value = lng.toFixed(6);
+
+                if (destinationMarker) map.removeLayer(destinationMarker);
+                destinationMarker = L.marker([lat, lng], { icon: destinationIcon })
+                    .addTo(map)
+                    .bindPopup('Destination Location')
+                    .openPopup();
+                break;
+        }
+
+        // Exit pin mode after placement
+        exitPinMode();
+    }
+
+    // Set pin mode
+    function setPinMode(mode) {
+        currentPinMode = mode;
+        const indicator = document.getElementById('pinModeIndicator');
+
+        switch(mode) {
+            case 'nearby':
+                indicator.textContent = 'Click on map to set location for nearby stops';
+                break;
+            case 'origin':
+                indicator.textContent = 'Click on map to set origin location';
+                break;
+            case 'destination':
+                indicator.textContent = 'Click on map to set destination location';
+                break;
+        }
+
+        indicator.style.display = 'block';
+    }
+
+    // Exit pin mode
+    function exitPinMode() {
+        currentPinMode = null;
+        document.getElementById('pinModeIndicator').style.display = 'none';
+    }
+
+    // Use current location
+    function useCurrentLocation() {
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const lat = position.coords.latitude;
+                    const lon = position.coords.longitude;
+
+                    document.getElementById('selectedLat').value = lat.toFixed(6);
+                    document.getElementById('selectedLon').value = lon.toFixed(6);
+
+                    if (userMarker) map.removeLayer(userMarker);
+                    userMarker = L.marker([lat, lon], { icon: originIcon })
+                        .addTo(map)
+                        .bindPopup('Your Current Location')
+                        .openPopup();
+
+                    map.setView([lat, lon], 14);
+                },
+                (error) => {
+                    alert('Unable to get your location: ' + error.message);
+                }
+            );
+        } else {
+            alert('Geolocation is not supported by your browser');
+        }
+    }
+
+    // Load all stops
+    async function loadAllStops() {
+        try {
+            const response = await fetch(`${API_BASE}/api/gtfs/stops`);
+            const stops = await response.json();
+
+            // Clear existing all stop markers
+            Object.values(allStopMarkers).forEach(marker => map.removeLayer(marker));
+            allStopMarkers = {};
+
+            // Add all stops to map
+            stops.forEach(stop => {
+                const marker = L.marker([stop.stopLat, stop.stopLon], {
+                    icon: busStopIcon
+                }).addTo(map);
+
+                marker.bindPopup(`
+                    <div class="popup-content">
+                        <div class="popup-title">🚏 ${stop.stopName}</div>
+                        <div class="popup-detail"><strong>ID:</strong> ${stop.stopId}</div>
+                        <div class="popup-detail"><strong>Code:</strong> ${stop.stopCode || 'N/A'}</div>
+                        <button onclick="getNextBuses('${stop.stopId}')" style="margin-top: 8px; padding: 5px 10px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                            Next Buses
+                        </button>
+                    </div>
+                `);
+
+                allStopMarkers[stop.stopId] = marker;
+            });
+
+            allStopsVisible = true;
+            document.getElementById('toggleAllStops').checked = true;
+
+            // Show success message
+            const results = document.getElementById('nearbyResults');
+            results.innerHTML = `
+                <div class="result-card">
+                    <div class="result-title">✅ All Stops Loaded</div>
+                    <div class="result-detail">Loaded ${stops.length} bus stops on the map</div>
+                    <span class="result-badge success">${stops.length} stops</span>
+                </div>
+            `;
+
+        } catch (err) {
+            console.error('Error loading all stops:', err);
+            const results = document.getElementById('nearbyResults');
+            results.innerHTML = `<div class="empty-state">Error loading stops: ${err.message}</div>`;
+        }
+    }
+
+    // Find nearby stops using pin location
+    async function findNearbyStops() {
+        const lat = parseFloat(document.getElementById('selectedLat').value);
+        const lon = parseFloat(document.getElementById('selectedLon').value);
+        const radius = parseFloat(document.getElementById('nearbyRadius').value);
+
+        if (!lat || !lon) {
+            alert('Please set a location first by clicking on the map or using your current location');
+            return;
+        }
+
+        const results = document.getElementById('nearbyResults');
+        results.innerHTML = '<div class="loading"><div class="spinner"></div>Finding nearby stops...</div>';
+
+        try {
+            const response = await fetch(`${API_BASE}/api/transit/stops/nearby?lat=${lat}&lon=${lon}&radius=${radius}`);
+            const stops = await response.json();
+
+            // Clear old nearby stop markers but keep all stops
+            Object.values(stopMarkers).forEach(m => map.removeLayer(m));
+            stopMarkers = {};
+
+            if (stops.length === 0) {
+                results.innerHTML = '<div class="empty-state">No stops found within the specified radius</div>';
+                return;
+            }
+
+            results.innerHTML = stops.map(stop => {
+                // Add stop marker (will be on top of all stops)
+                const marker = L.marker([stop.stop.lat, stop.stop.lon], {
+                    icon: busStopIcon,
+                    zIndexOffset: 1000 // Make sure these are on top
+                }).addTo(map);
+
+                marker.bindPopup(`
+                    <div class="popup-content">
+                        <div class="popup-title">🚏 ${stop.stop.stopName}</div>
+                        <div class="popup-detail"><strong>ID:</strong> ${stop.stop.stopId}</div>
+                        <div class="popup-detail"><strong>Distance:</strong> ${stop.distance.toFixed(2)} km</div>
+                        <button onclick="getNextBuses('${stop.stop.stopId}')" style="margin-top: 8px; padding: 5px 10px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                            Next Buses
+                        </button>
+                    </div>
+                `);
+
+                stopMarkers[stop.stop.stopId] = marker;
+
+                return `
+                    <div class="result-card" onclick="showStop('${stop.stop.stopId}', ${stop.stop.lat}, ${stop.stop.lon})">
+                        <div class="result-title">🚏 ${stop.stop.stopName}</div>
+                        <div class="result-detail">📍 ${stop.distance.toFixed(2)} km away</div>
+                        <div class="result-detail">ID: ${stop.stop.stopId}</div>
+                        <button class="result-badge" onclick="event.stopPropagation(); getNextBuses('${stop.stop.stopId}')">Next Buses</button>
+                    </div>
+                `;
+            }).join('');
+
+        } catch (err) {
+            results.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
+        }
+    }
+
+    // Plan route using pins
+    async function planRouteByPins() {
+        const originLat = parseFloat(document.getElementById('originLat').value);
+        const originLon = parseFloat(document.getElementById('originLon').value);
+        const destLat = parseFloat(document.getElementById('destLat').value);
+        const destLon = parseFloat(document.getElementById('destLon').value);
+
+        if (!originLat || !originLon || !destLat || !destLon) {
+            alert('Please set both origin and destination locations first');
+            return;
+        }
+
+        const results = document.getElementById('routeResults');
+        results.innerHTML = '<div class="loading"><div class="spinner"></div>Finding routes...</div>';
+
+        try {
+            const response = await fetch(`${API_BASE}/api/transit/routes/plan?originLat=${originLat}&originLon=${originLon}&destLat=${destLat}&destLon=${destLon}`);
+
+            if (response.status === 204) {
+                results.innerHTML = '<div class="empty-state">No routes found between these locations</div>';
+                return;
+            }
+
+            const routes = await response.json();
+
+            results.innerHTML = routes.map(route => `
+                <div class="result-card">
+                    <div class="result-title">🚌 ${route.route.routeShortName} - ${route.route.routeLongName}</div>
+                    <div class="result-detail">📍 ${route.totalStops} stops</div>
+                    <div class="result-detail">🕒 Estimated travel time</div>
+                    <span class="result-badge">Direct Route</span>
+                </div>
+            `).join('');
+
+        } catch (err) {
+            results.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
+        }
+    }
+
+    // Calculate fare using pins
+    async function calculateFareByPins() {
+        const originLat = parseFloat(document.getElementById('originLat').value);
+        const originLon = parseFloat(document.getElementById('originLon').value);
+        const destLat = parseFloat(document.getElementById('destLat').value);
+        const destLon = parseFloat(document.getElementById('destLon').value);
+
+        if (!originLat || !originLon || !destLat || !destLon) {
+            alert('Please set both origin and destination locations first');
+            return;
+        }
+
+        const results = document.getElementById('routeResults');
+        results.innerHTML = '<div class="loading"><div class="spinner"></div>Calculating fare...</div>';
+
+        try {
+            const response = await fetch(`${API_BASE}/api/transit/fare/calculate?originLat=${originLat}&originLon=${originLon}&destLat=${destLat}&destLon=${destLon}`);
+            const fare = await response.json();
+
+            results.innerHTML = `
+                <div class="result-card">
+                    <div class="result-title">💰 Fare Information</div>
+                    <div class="result-detail">Amount: ₹${fare.price}</div>
+                    <div class="result-detail">Currency: ${fare.currency}</div>
+                    <div class="result-detail">${fare.description}</div>
+                    <span class="result-badge success">Fare Calculated</span>
+                </div>
+            `;
+
+        } catch (err) {
+            results.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
+        }
+    }
+
+    // Toggle visibility functions
+    function toggleBusesVisibility() {
+        const show = document.getElementById('toggleBuses').checked;
+        Object.values(vehicleMarkers).forEach(marker => {
+            if (show) {
+                map.addLayer(marker);
+            } else {
+                map.removeLayer(marker);
+            }
+        });
+    }
+
+    function toggleStopsVisibility() {
+        const show = document.getElementById('toggleStops').checked;
+        Object.values(stopMarkers).forEach(marker => {
+            if (show) {
+                map.addLayer(marker);
+            } else {
+                map.removeLayer(marker);
+            }
+        });
+    }
+
+    function toggleAllStopsVisibility() {
+        const show = document.getElementById('toggleAllStops').checked;
+        Object.values(allStopMarkers).forEach(marker => {
+            if (show) {
+                map.addLayer(marker);
+            } else {
+                map.removeLayer(marker);
+            }
+        });
+        allStopsVisible = show;
+    }
+
+    // [Keep all the existing functions like connectSSE, fetchVehiclesREST, updateVehicles, etc. from your original code]
+    // ... (Include all the existing JavaScript functions from your original code here)
+
+    // Initialize
+    window.onload = initMap;
+</script>
+
+<!-- Include all the remaining original JavaScript functions below -->
+<script>
     // SSE Connection
     function connectSSE() {
         if (eventSource) {
@@ -641,73 +1108,6 @@
         }
     }
 
-    // Find Nearby Stops
-    async function findNearbyStops() {
-        const lat = parseFloat(document.getElementById('userLat').value);
-        const lon = parseFloat(document.getElementById('userLon').value);
-        const limit = parseInt(document.getElementById('nearbyLimit').value);
-
-        if (!lat || !lon) {
-            alert('Please enter valid coordinates');
-            return;
-        }
-
-        const results = document.getElementById('nearbyResults');
-        results.innerHTML = '<div class="loading"><div class="spinner"></div>Loading...</div>';
-
-        try {
-            const response = await fetch(`${API_BASE}/api/transit/stops/nearby?lat=${lat}&lon=${lon}&limit=${limit}`);
-            const stops = await response.json();
-
-            // Add user marker
-            if (userMarker) map.removeLayer(userMarker);
-            userMarker = L.marker([lat, lon], {
-                icon: L.divIcon({
-                    html: '<div style="font-size: 24px;">📍</div>',
-                    iconSize: [30, 30],
-                    iconAnchor: [15, 15]
-                })
-            }).addTo(map);
-            userMarker.bindPopup('<strong>Your Location</strong>').openPopup();
-            map.setView([lat, lon], 14);
-
-            // Clear old stop markers
-            Object.values(stopMarkers).forEach(m => map.removeLayer(m));
-            stopMarkers = {};
-
-            if (stops.length === 0) {
-                results.innerHTML = '<div class="empty-state">No stops found nearby</div>';
-                return;
-            }
-
-            results.innerHTML = stops.map(stop => {
-                // Add stop marker
-                const marker = L.marker([stop.lat, stop.lon], {
-                    icon: busStopIcon
-                }).addTo(map);
-                marker.bindPopup(`
-                    <div class="popup-content">
-                        <div class="popup-title">🚏 ${stop.stopName}</div>
-                        <div class="popup-detail"><strong>ID:</strong> ${stop.stopId}</div>
-                        <div class="popup-detail"><strong>Distance:</strong> ${stop.distanceKm.toFixed(2)} km</div>
-                    </div>
-                `);
-                stopMarkers[stop.stopId] = marker;
-
-                return `
-                    <div class="result-card" onclick="showStop('${stop.stopId}', ${stop.lat}, ${stop.lon})">
-                        <div class="result-title">🚏 ${stop.stopName}</div>
-                        <div class="result-detail">📍 ${stop.distanceKm.toFixed(2)} km away</div>
-                        <div class="result-detail">ID: ${stop.stopId}</div>
-                        <button class="result-badge" onclick="event.stopPropagation(); getNextBuses('${stop.stopId}')">Next Buses</button>
-                    </div>
-                `;
-            }).join('');
-        } catch (err) {
-            results.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
-        }
-    }
-
     // Get Next Buses
     async function getNextBuses(stopId) {
         const results = document.getElementById('nearbyResults');
@@ -726,146 +1126,13 @@
                 <h3 style="margin-bottom: 15px; color: #667eea;">Next Buses at ${stopId}</h3>
                 ${buses.map(bus => `
                     <div class="result-card">
-                        <div class="result-title">🚌 ${bus.routeName}</div>
-                        <div class="result-detail">⏰ Arrives: ${bus.arrivalTime}</div>
-                        <div class="result-detail">🎯 Destination: ${bus.headsign || 'Unknown'}</div>
-                        <span class="result-badge">${bus.minutesAway} min</span>
+                        <div class="result-title">🚌 ${bus.route.routeShortName}</div>
+                        <div class="result-detail">⏰ Arrives: ${bus.stopTime.departureTime}</div>
+                        <div class="result-detail">🎯 Route: ${bus.route.routeLongName}</div>
+                        <span class="result-badge">${bus.stopTime.stopSequence} stop</span>
                     </div>
                 `).join('')}
             `;
-        } catch (err) {
-            results.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
-        }
-    }
-
-    // Plan Route
-    async function planRoute() {
-        const origin = document.getElementById('originStop').value.trim();
-        const dest = document.getElementById('destStop').value.trim();
-
-        if (!origin || !dest) {
-            alert('Please enter both origin and destination stop IDs');
-            return;
-        }
-
-        const results = document.getElementById('routeResults');
-        results.innerHTML = '<div class="loading"><div class="spinner"></div>Finding routes...</div>';
-
-        try {
-            const response = await fetch(`${API_BASE}/api/transit/routes/plan?origin=${origin}&dest=${dest}`);
-
-            if (response.status === 204) {
-                results.innerHTML = '<div class="empty-state">No routes found between these stops</div>';
-                return;
-            }
-
-            const routes = await response.json();
-
-            results.innerHTML = routes.map(route => `
-                <div class="result-card" onclick="showRouteDetails('${route.routeId}')">
-                    <div class="result-title">🚌 ${route.routeName}</div>
-                    <div class="result-detail">📍 ${route.stops.length} stops</div>
-                    <div class="result-detail">⏱️ ${route.estimatedMinutes} minutes</div>
-                    ${route.stops.map(stop => `<span class="result-badge">${stop}</span>`).join('')}
-                </div>
-            `).join('');
-        } catch (err) {
-            results.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
-        }
-    }
-
-    // Calculate Fare
-    async function calculateFare() {
-        const origin = document.getElementById('originStop').value.trim();
-        const dest = document.getElementById('destStop').value.trim();
-
-        if (!origin || !dest) {
-            alert('Please enter both origin and destination stop IDs');
-            return;
-        }
-
-        const results = document.getElementById('routeResults');
-        results.innerHTML = '<div class="loading"><div class="spinner"></div>Calculating fare...</div>';
-
-        try {
-            const response = await fetch(`${API_BASE}/api/transit/fare?origin=${origin}&dest=${dest}`);
-            const fare = await response.json();
-
-            results.innerHTML = `
-                <div class="result-card">
-                    <div class="result-title">💰 Fare Information</div>
-                    <div class="result-detail">Amount: ${fare.amount} ${fare.currency}</div>
-                    <div class="result-detail">From: ${origin}</div>
-                    <div class="result-detail">To: ${dest}</div>
-                    ${fare.transfers ? `<div class="result-detail">Transfers: ${fare.transfers}</div>` : ''}
-                </div>
-            `;
-        } catch (err) {
-            results.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
-        }
-    }
-
-    // Search Stops
-    async function searchStops() {
-        const query = document.getElementById('searchStops').value.trim();
-        if (!query) {
-            alert('Please enter a search term');
-            return;
-        }
-
-        const results = document.getElementById('searchResults');
-        results.innerHTML = '<div class="loading"><div class="spinner"></div>Searching...</div>';
-
-        try {
-            const response = await fetch(`${API_BASE}/api/transit/stops/search?q=${encodeURIComponent(query)}`);
-            const stops = await response.json();
-
-            if (stops.length === 0) {
-                results.innerHTML = '<div class="empty-state">No stops found</div>';
-                return;
-            }
-
-            results.innerHTML = stops.map(stop => `
-                <div class="result-card" onclick="showStop('${stop.stopId}', ${stop.stopLat}, ${stop.stopLon})">
-                    <div class="result-title">🚏 ${stop.stopName}</div>
-                    <div class="result-detail">ID: ${stop.stopId}</div>
-                    <div class="result-detail">Code: ${stop.stopCode || 'N/A'}</div>
-                    <button class="result-badge" onclick="event.stopPropagation(); getNextBuses('${stop.stopId}')">Next Buses</button>
-                </div>
-            `).join('');
-        } catch (err) {
-            results.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
-        }
-    }
-
-    // Search Routes
-    async function searchRoutes() {
-        const query = document.getElementById('searchRoutes').value.trim();
-        if (!query) {
-            alert('Please enter a search term');
-            return;
-        }
-
-        const results = document.getElementById('searchResults');
-        results.innerHTML = '<div class="loading"><div class="spinner"></div>Searching...</div>';
-
-        try {
-            const response = await fetch(`${API_BASE}/api/transit/routes/search?q=${encodeURIComponent(query)}`);
-            const routes = await response.json();
-
-            if (routes.length === 0) {
-                results.innerHTML = '<div class="empty-state">No routes found</div>';
-                return;
-            }
-
-            results.innerHTML = routes.map(route => `
-                <div class="result-card" onclick="showRouteDetails('${route.routeId}')">
-                    <div class="result-title">🚌 ${route.routeShortName}</div>
-                    <div class="result-detail">${route.routeLongName}</div>
-                    <div class="result-detail">ID: ${route.routeId}</div>
-                    <span class="result-badge">Type: ${route.routeType}</span>
-                </div>
-            `).join('');
         } catch (err) {
             results.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
         }
@@ -876,18 +1143,8 @@
         map.setView([lat, lon], 16);
         if (stopMarkers[stopId]) {
             stopMarkers[stopId].openPopup();
-        }
-    }
-
-    // Show Route Details
-    async function showRouteDetails(routeId) {
-        try {
-            const response = await fetch(`${API_BASE}/api/transit/routes/${routeId}/details`);
-            const details = await response.json();
-
-            alert(`Route: ${details.routeName}\nStops: ${details.stops.length}\nDescription: ${details.description || 'N/A'}`);
-        } catch (err) {
-            alert('Error fetching route details');
+        } else if (allStopMarkers[stopId]) {
+            allStopMarkers[stopId].openPopup();
         }
     }
 
@@ -898,10 +1155,7 @@
                 (position) => {
                     const lat = position.coords.latitude;
                     const lon = position.coords.longitude;
-                    document.getElementById('userLat').value = lat.toFixed(6);
-                    document.getElementById('userLon').value = lon.toFixed(6);
                     map.setView([lat, lon], 14);
-                    findNearbyStops();
                 },
                 (error) => {
                     alert('Unable to get your location: ' + error.message);
@@ -927,9 +1181,6 @@
             document.getElementById(tab.dataset.tab + '-panel').classList.add('active');
         });
     });
-
-    // Initialize
-    window.onload = initMap;
 </script>
 </body>
 </html>

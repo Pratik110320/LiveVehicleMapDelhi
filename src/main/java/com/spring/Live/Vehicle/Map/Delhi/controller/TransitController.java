@@ -1,5 +1,6 @@
 package com.spring.Live.Vehicle.Map.Delhi.controller;
 
+import com.spring.Live.Vehicle.Map.Delhi.model.Stop;
 import com.spring.Live.Vehicle.Map.Delhi.service.TransitService;
 import com.spring.Live.Vehicle.Map.Delhi.service.TransitService.*;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,37 +16,38 @@ public class TransitController {
 
     @Autowired
     private TransitService transitService;
-
     // ===============================
-    // FIND NEARBY STOPS
+    // FIND NEARBY STOPS (PIN-BASED)
     // ===============================
     /**
-     * GET /api/transit/stops/nearby?lat=28.6139&lon=77.2090&limit=5
-     * Find stops near user's location
+     * GET /api/transit/stops/nearby?lat=28.6139&lon=77.2090&radius=1.0
+     * Find stops near a pin location on map
      */
     @GetMapping("/stops/nearby")
     public ResponseEntity<List<NearbyStopDTO>> getNearbyStops(
             @RequestParam double lat,
             @RequestParam double lon,
-            @RequestParam(defaultValue = "2") int limit) {
+            @RequestParam(defaultValue = "1.0") double radius) { // radius in km
 
-        List<NearbyStopDTO> nearbyStops = transitService.findNearestStops(lat, lon, limit);
+        List<NearbyStopDTO> nearbyStops = transitService.findNearestStops(lat, lon, radius);
         return ResponseEntity.ok(nearbyStops);
     }
 
     // ===============================
-    // ROUTE PLANNING (A to B)
+    // ROUTE PLANNING (PIN-BASED)
     // ===============================
     /**
-     * GET /api/transit/routes/plan?origin=STOP001&dest=STOP150
-     * Find routes between two stops
+     * GET /api/transit/routes/plan?originLat=28.6139&originLon=77.2090&destLat=28.6542&destLon=77.2373
+     * Find routes between two pin locations
      */
     @GetMapping("/routes/plan")
     public ResponseEntity<List<RouteOption>> planRoute(
-            @RequestParam String origin,
-            @RequestParam String dest) {
+            @RequestParam double originLat,
+            @RequestParam double originLon,
+            @RequestParam double destLat,
+            @RequestParam double destLon) {
 
-        List<RouteOption> routes = transitService.findRoutes(origin, dest);
+        List<RouteOption> routes = transitService.findRoutesByLocation(originLat, originLon, destLat, destLon);
 
         if (routes.isEmpty()) {
             return ResponseEntity.noContent().build();
@@ -55,12 +57,66 @@ public class TransitController {
     }
 
     // ===============================
-    // NEXT BUS ARRIVALS
+    // NEXT BUS ARRIVALS (PIN-BASED)
     // ===============================
     /**
-     * GET /api/transit/stops/STOP001/next-buses?limit=5
-     * Get next arriving buses at a stop
+     * GET /api/transit/stops/nearby/next-buses?lat=28.6139&lon=77.2090&radius=0.5
+     * Get next arriving buses near a pin location
      */
+    @GetMapping("/stops/nearby/next-buses")
+    public ResponseEntity<List<NextBusDTO>> getNextBusesNearby(
+            @RequestParam double lat,
+            @RequestParam double lon,
+            @RequestParam(defaultValue = "0.5") double radius,
+            @RequestParam(defaultValue = "5") int limit) {
+
+        List<NextBusDTO> nextBuses = transitService.getNextBusesNearLocation(lat, lon, radius, limit);
+        return ResponseEntity.ok(nextBuses);
+    }
+
+    // ===============================
+    // FARE CALCULATION (PIN-BASED)
+    // ===============================
+    /**
+     * GET /api/transit/fare/calculate?originLat=28.6139&originLon=77.2090&destLat=28.6542&destLon=77.2373
+     * Calculate fare for a journey between two pin locations
+     */
+    @GetMapping("/fare/calculate")
+    public ResponseEntity<FareInfo> calculateFareByLocation(
+            @RequestParam double originLat,
+            @RequestParam double originLon,
+            @RequestParam double destLat,
+            @RequestParam double destLon) {
+
+        FareInfo fareInfo = transitService.calculateFareByLocation(originLat, originLon, destLat, destLon);
+        return ResponseEntity.ok(fareInfo);
+    }
+
+    // ===============================
+    // GET NEAREST STOP FROM PIN
+    // ===============================
+    /**
+     * GET /api/transit/stops/nearest?lat=28.6139&lon=77.2090
+     * Find the nearest stop to a pin location
+     */
+    @GetMapping("/stops/nearest")
+    public ResponseEntity<Stop> getNearestStop(
+            @RequestParam double lat,
+            @RequestParam double lon) {
+
+        Stop nearestStop = transitService.findNearestStop(lat, lon);
+
+        if (nearestStop == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        return ResponseEntity.ok(nearestStop);
+    }
+
+    // ===============================
+    // EXISTING ENDPOINTS (KEEP FOR BACKWARD COMPATIBILITY)
+    // ===============================
+
     @GetMapping("/stops/{stopId}/next-buses")
     public ResponseEntity<List<NextBusDTO>> getNextBuses(
             @PathVariable String stopId,
@@ -70,13 +126,6 @@ public class TransitController {
         return ResponseEntity.ok(nextBuses);
     }
 
-    // ===============================
-    // FARE CALCULATION
-    // ===============================
-    /**
-     * GET /api/transit/fare?origin=STOP001&dest=STOP150&route=ROUTE_X
-     * Calculate fare for a journey
-     */
     @GetMapping("/fare")
     public ResponseEntity<FareInfo> calculateFare(
             @RequestParam String origin,

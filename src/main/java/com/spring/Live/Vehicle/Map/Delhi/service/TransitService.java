@@ -392,4 +392,98 @@ public class TransitService {
         public List<Stop> getStops() { return stops; }
         public List<StopTime> getStopTimes() { return stopTimes; }
     }
+
+    // ===============================
+// PIN-BASED LOCATION METHODS
+// ===============================
+
+    /**
+     * Find the nearest stop to a given location
+     */
+    public Stop findNearestStop(double lat, double lon) {
+        List<Stop> allStops = stopRepository.findAll();
+
+        return allStops.stream()
+                .min(Comparator.comparingDouble(stop ->
+                        calculateDistance(lat, lon, stop.getStopLat(), stop.getStopLon())))
+                .orElse(null);
+    }
+
+    /**
+     * Find routes between two pin locations
+     */
+    public List<RouteOption> findRoutesByLocation(double originLat, double originLon,
+                                                  double destLat, double destLon) {
+
+        // Find nearest stops to both locations
+        Stop originStop = findNearestStop(originLat, originLon);
+        Stop destStop = findNearestStop(destLat, destLon);
+
+        if (originStop == null || destStop == null) {
+            return Collections.emptyList();
+        }
+
+        // Use existing route finding logic with the discovered stop IDs
+        return findRoutes(originStop.getStopId(), destStop.getStopId());
+    }
+
+    /**
+     * Calculate fare between two pin locations
+     */
+    public FareInfo calculateFareByLocation(double originLat, double originLon,
+                                            double destLat, double destLon) {
+
+        Stop originStop = findNearestStop(originLat, originLon);
+        Stop destStop = findNearestStop(destLat, destLon);
+
+        if (originStop == null || destStop == null) {
+            return new FareInfo(0, "INR", "No stops found near the specified locations");
+        }
+
+        // Find possible routes and use the first one for fare calculation
+        List<RouteOption> routes = findRoutes(originStop.getStopId(), destStop.getStopId());
+
+        if (routes.isEmpty()) {
+            return new FareInfo(0, "INR", "No routes found between the specified locations");
+        }
+
+        String routeId = routes.get(0).getRoute().getRouteId();
+        return calculateFare(originStop.getStopId(), destStop.getStopId(), routeId);
+    }
+
+    /**
+     * Get next buses near a pin location
+     */
+    public List<NextBusDTO> getNextBusesNearLocation(double lat, double lon,
+                                                     double radius, int limit) {
+
+        // Find nearby stops
+        List<NearbyStopDTO> nearbyStops = findNearestStops(lat, lon, radius);
+
+        // Get next buses for each nearby stop
+        return nearbyStops.stream()
+                .flatMap(nearbyStop ->
+                        getNextBuses(nearbyStop.getStop().getStopId(), limit).stream())
+                .sorted(Comparator.comparing(dto -> dto.getStopTime().getDepartureTime()))
+                .limit(limit)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Enhanced nearby stops with better filtering
+     */
+    public List<NearbyStopDTO> findNearestStops(double userLat, double userLon, double radiusKm) {
+        List<Stop> allStops = stopRepository.findAll();
+
+        return allStops.stream()
+                .map(stop -> {
+                    double distance = calculateDistance(userLat, userLon,
+                            stop.getStopLat(), stop.getStopLon());
+                    return new NearbyStopDTO(stop, distance);
+                })
+                .filter(dto -> dto.getDistance() <= radiusKm)
+                .sorted(Comparator.comparingDouble(NearbyStopDTO::getDistance))
+                .limit(15) // Increased limit for better coverage
+                .collect(Collectors.toList());
+    }
 }
