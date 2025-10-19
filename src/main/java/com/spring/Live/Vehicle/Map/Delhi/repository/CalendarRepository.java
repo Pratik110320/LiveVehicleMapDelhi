@@ -3,13 +3,13 @@ package com.spring.Live.Vehicle.Map.Delhi.repository;
 import com.spring.Live.Vehicle.Map.Delhi.model.Calendar;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
-import org.springframework.stereotype.Repository;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 
-@Repository
 public interface CalendarRepository extends JpaRepository<Calendar, String> {
-    @Query("SELECT c FROM Calendar c WHERE " +
-            "c.startDate <= ?1 AND c.endDate >= ?1")
-    List<Calendar> findActiveServicesForDate(String date);
+
+    // Query to find all services that are active for a given date.
+    @Query("SELECT c FROM Calendar c WHERE c.startDate <= :date AND c.endDate >= :date")
+    List<Calendar> findActiveServicesForDate(@Param("date") String date);
 }

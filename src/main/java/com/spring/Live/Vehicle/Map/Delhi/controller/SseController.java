@@ -1,6 +1,8 @@
 package com.spring.Live.Vehicle.Map.Delhi.controller;
 
 import com.spring.Live.Vehicle.Map.Delhi.service.NotificationService;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -9,21 +11,14 @@ import reactor.core.publisher.Flux;
 @RestController
 public class SseController {
 
-    private final NotificationService notificationService;
+    @Autowired
+    private NotificationService notificationService;
 
-    public SseController(NotificationService notificationService) {
-        this.notificationService = notificationService;
-    }
-
-    /**
-     * Provides a stream of Server-Sent Events.
-     * With spring-boot-starter-webflux, Spring Boot automatically handles the subscription
-     * and lifecycle of a reactive Flux stream, converting it into an SSE stream.
-     * This eliminates the need for manual SseEmitter management.
-     * @return A Flux<String> that represents the continuous stream of notifications.
-     */
-    @GetMapping(path = "/notifications", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<String> streamNotifications() {
-        return notificationService.getNotificationStream();
+    // Corrected path to match the frontend EventSource URL
+    @GetMapping(path = "/api/sse/vehicles", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<String> streamNotifications(HttpServletRequest request) {
+        // Use HTTP session ID to manage individual client streams
+        String sessionId = request.getSession().getId();
+        return notificationService.getNotificationStream(sessionId);
     }
 }

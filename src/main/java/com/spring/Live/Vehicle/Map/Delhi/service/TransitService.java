@@ -1,9 +1,11 @@
 package com.spring.Live.Vehicle.Map.Delhi.service;
 
+import com.spring.Live.Vehicle.Map.Delhi.model.Route;
 import com.spring.Live.Vehicle.Map.Delhi.model.Stop;
 import com.spring.Live.Vehicle.Map.Delhi.model.StopTime;
 import com.spring.Live.Vehicle.Map.Delhi.repository.StopRepository;
 import com.spring.Live.Vehicle.Map.Delhi.repository.StopTimeRepository;
+import com.spring.Live.Vehicle.Map.Delhi.repository.TripRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -18,6 +20,9 @@ public class TransitService {
 
     @Autowired
     private StopRepository stopRepository;
+
+    @Autowired
+    private TripRepository tripRepository;
 
     public List<Stop> findRoute(Stop from, Stop to) {
         // Find all stop times (which correspond to trips) for the starting and ending stops.
@@ -76,4 +81,22 @@ public class TransitService {
 
         return stopsOnRoute;
     }
+
+    public List<Map<String, Object>> getRoutesByStopName(String stopName) {
+        List<Route> routes = tripRepository.findRoutesByStopName(stopName);
+
+        // Use distinct() because a stop might be on multiple trips for the same route.
+        return routes.stream()
+                .distinct()
+                .map(route -> {
+                    // Using HashMap to ensure the value type is Object, resolving potential type conflicts.
+                    Map<String, Object> map = new HashMap<>();
+                    map.put("routeId", route.getRouteId());
+                    map.put("routeShortName", route.getRouteShortName());
+                    map.put("routeLongName", route.getRouteLongName());
+                    return map;
+                })
+                .collect(Collectors.toList());
+    }
+
 }

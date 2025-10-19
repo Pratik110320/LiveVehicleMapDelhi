@@ -3,107 +3,505 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Delhi Live Bus Map</title>
+    <title>Delhi Live Bus Tracker</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet"/>
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; background-color: #f4f4f4; }
-        #map { flex-grow: 1; border-bottom: 1px solid #ddd; }
-        .controls { background: #fff; padding: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); z-index: 1000; display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
-        .control-group { display: flex; flex-direction: column; }
-        .control-group label { font-size: 12px; color: #555; margin-bottom: 4px; }
-        .controls .select2-container { width: 200px !important; }
-        .controls button { cursor: pointer; background: #007bff; color: white; border: none; padding: 10px 15px; border-radius: 5px; font-weight: bold; transition: background-color 0.2s; }
-        .controls button:hover { background: #0056b3; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
-        #toast { visibility: hidden; min-width: 250px; margin-left: -125px; background-color: #333; color: #fff; text-align: center; border-radius: 5px; padding: 16px; position: fixed; z-index: 2000; left: 50%; bottom: 30px; font-size: 16px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
-        #toast.show { visibility: visible; animation: fadein 0.5s, fadeout 0.5s 2.5s; }
-        @keyframes fadein { from {bottom: 0; opacity: 0;} to {bottom: 30px; opacity: 1;} }
-        @keyframes fadeout { from {bottom: 30px; opacity: 1;} to {bottom: 0; opacity: 0;} }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            overflow: hidden;
+        }
 
-        .leaflet-popup-content-wrapper { border-radius: 5px; }
-        .schedule-popup h4 { margin: 0 0 10px; font-size: 16px; border-bottom: 1px solid #eee; padding-bottom: 5px;}
-        .schedule-popup ul { list-style: none; padding: 0; margin: 0; max-height: 200px; overflow-y: auto; }
-        .schedule-popup li { padding: 4px 0; display: flex; justify-content: space-between; font-size: 14px; }
-        .schedule-popup li .route-name { font-weight: bold; color: #007bff; }
-        .schedule-popup .no-info { color: #888; }
+        .main-container {
+            display: flex;
+            height: 100vh;
+            padding: 16px;
+            gap: 16px;
+        }
+
+        /* Left Panel - Map */
+        .map-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .map-controls {
+            background: white;
+            padding: 16px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .control-row {
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            min-width: 200px;
+        }
+
+        .control-group label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #4a5568;
+            margin-bottom: 6px;
+        }
+
+        .control-group .select2-container {
+            width: 200px !important;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-top: auto;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5568d3;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
+        }
+
+        .divider {
+            border-left: 2px solid #e2e8f0;
+            height: 40px;
+            margin: 0 10px;
+        }
+
+        #map {
+            flex: 1;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        /* Right Panel - Arrivals */
+        .arrivals-panel {
+            width: 400px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .arrivals-header {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .arrivals-header h1 {
+            font-size: 24px;
+            color: #1a202c;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .arrivals-header p {
+            color: #718096;
+            font-size: 14px;
+            margin-bottom: 16px;
+        }
+
+        .search-box {
+            display: flex;
+            gap: 8px;
+        }
+
+        .search-box input {
+            flex: 1;
+            padding: 10px 14px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+
+        .search-box input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .arrivals-content {
+            flex: 1;
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            overflow-y: auto;
+        }
+
+        .content-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #f7fafc;
+        }
+
+        .content-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1a202c;
+        }
+
+        .last-updated {
+            font-size: 11px;
+            color: #a0aec0;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .refresh-icon {
+            animation: spin 2s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .prediction-item {
+            border-left: 4px solid #667eea;
+            padding: 14px;
+            margin-bottom: 10px;
+            background: #f7fafc;
+            border-radius: 8px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .prediction-item:hover {
+            transform: translateX(4px);
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
+        }
+
+        .prediction-item.realtime {
+            border-left-color: #48bb78;
+        }
+
+        .prediction-item.delayed {
+            border-left-color: #f56565;
+        }
+
+        .prediction-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 8px;
+        }
+
+        .route-info {
+            flex: 1;
+        }
+
+        .route-number {
+            font-size: 20px;
+            font-weight: 700;
+            color: #1a202c;
+            margin-bottom: 4px;
+        }
+
+        .route-destination {
+            font-size: 13px;
+            color: #4a5568;
+        }
+
+        .arrival-time {
+            text-align: right;
+        }
+
+        .minutes-away {
+            font-size: 28px;
+            font-weight: 700;
+            color: #667eea;
+            line-height: 1;
+        }
+
+        .minutes-away.soon { color: #48bb78; }
+        .minutes-away.delayed { color: #f56565; }
+
+        .arrival-label {
+            font-size: 10px;
+            color: #718096;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 4px;
+        }
+
+        .prediction-details {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+
+        .detail-badge {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 10px;
+            background: white;
+            border-radius: 6px;
+            font-size: 11px;
+            color: #4a5568;
+        }
+
+        .badge-icon {
+            width: 14px;
+            height: 14px;
+        }
+
+        .badge-realtime {
+            background: #c6f6d5;
+            color: #22543d;
+            font-weight: 600;
+        }
+
+        .badge-delayed {
+            background: #fed7d7;
+            color: #742a2a;
+        }
+
+        .badge-crowded {
+            background: #feebc8;
+            color: #7c2d12;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #a0aec0;
+        }
+
+        .empty-icon {
+            font-size: 40px;
+            margin-bottom: 12px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px 20px;
+            color: #718096;
+        }
+
+        .loading-spinner {
+            border: 3px solid #e2e8f0;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1a202c;
+            color: white;
+            padding: 14px 24px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            z-index: 10000;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .toast.show {
+            opacity: 1;
+        }
+
+        /* Leaflet popup customization */
+        .leaflet-popup-content-wrapper {
+            border-radius: 8px;
+        }
+
+        .stop-popup h4 {
+            margin: 0 0 10px;
+            font-size: 15px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 8px;
+        }
+
+        .stop-popup ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .stop-popup li {
+            padding: 6px 0;
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+        }
+
+        .stop-popup .route-name {
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .bus-popup {
+            min-width: 200px;
+        }
+
+        .bus-popup button {
+            margin-top: 10px;
+            width: 100%;
+            padding: 8px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .bus-popup button:hover {
+            background: #5568d3;
+        }
+
+        /* Responsive */
+        @media (max-width: 1200px) {
+            .main-container {
+                flex-direction: column;
+            }
+
+            .arrivals-panel {
+                width: 100%;
+                max-height: 400px;
+            }
+        }
     </style>
 </head>
 <body>
 
-<div class="controls">
-    <div class="control-group">
-        <label for="from-stop">From Stop</label>
-        <select id="from-stop"></select>
-    </div>
-    <div class="control-group">
-        <label for="to-stop">To Stop</label>
-        <select id="to-stop"></select>
-    </div>
-    <button onclick="searchRoute()">Find Route</button>
+<div class="main-container">
+    <!-- Left Panel: Map -->
+    <div class="map-panel">
+        <div class="map-controls">
+            <div class="control-row">
+                <div class="control-group">
+                    <label for="from-stop">From Stop</label>
+                    <select id="from-stop"></select>
+                </div>
+                <div class="control-group">
+                    <label for="to-stop">To Stop</label>
+                    <select id="to-stop"></select>
+                </div>
+                <button class="btn btn-primary" onclick="searchRoute()">Find Route</button>
 
-    <div style="border-left: 1px solid #ccc; height: 30px; margin: 0 15px;"></div>
+                <div class="divider"></div>
 
-    <div class="control-group">
-        <label for="bus-search">Find Bus by Number</label>
-        <select id="bus-search"></select>
+                <div class="control-group">
+                    <label for="bus-search">Find Bus</label>
+                    <select id="bus-search"></select>
+                </div>
+                <button class="btn btn-primary" onclick="searchBus()">Search</button>
+            </div>
+        </div>
+
+        <div id="map"></div>
     </div>
-    <button onclick="searchBus()">Search</button>
+
+    <!-- Right Panel: Real-time Arrivals -->
+    <div class="arrivals-panel">
+        <div class="arrivals-header">
+            <h1>🚌 Live Arrivals</h1>
+            <p>Real-time bus predictions</p>
+            <div class="search-box">
+                <input
+                        type="text"
+                        id="stopIdInput"
+                        placeholder="Stop ID (e.g., DL001234)"
+                >
+                <button class="btn btn-primary" onclick="loadPredictions()">Get</button>
+            </div>
+        </div>
+
+        <div class="arrivals-content">
+            <div class="content-header">
+                <div class="content-title" id="stopTitle">Select a stop</div>
+                <div class="last-updated" id="lastUpdated"></div>
+            </div>
+
+            <div id="predictionsContainer">
+                <div class="empty-state">
+                    <div class="empty-icon">📍</div>
+                    <p>Enter a stop ID to see arrivals<br>or click a stop on the map</p>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
-<div id="map"></div>
-<div id="toast"></div>
+<div id="toast" class="toast"></div>
 
 <script>
+    // Map initialization
     const map = L.map('map').setView([28.6139, 77.2090], 11);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
+    // State management
     let busMarkers = {};
     let stopMarkers = L.layerGroup().addTo(map);
     let routePolyline = null;
     let sseSource = null;
     let allStops = [];
     let allRoutes = [];
+    let autoRefreshInterval = null;
 
-    // --- UI Initialization ---
-    function initializeDropdowns() {
-        $('#from-stop, #to-stop').select2({
-            placeholder: "Select a stop",
-            data: allStops.map(s => ({id: s.stopName, text: s.stopName})).sort((a,b) => a.text.localeCompare(b.text))
-        });
-        $('#bus-search').select2({
-            placeholder: "Select a bus route",
-            data: allRoutes.map(r => ({id: r.routeShortName, text: `${r.routeShortName} - ${r.routeLongName}`})).sort((a,b) => a.id.localeCompare(b.id, undefined, {numeric: true}))
-        });
-    }
-
-    // --- Toast Notification ---
-    function showToast(message) {
-        const toast = document.getElementById("toast");
-        toast.textContent = message;
-        toast.className = "show";
-        setTimeout(() => { toast.className = toast.className.replace("show", ""); }, 3000);
-    }
-
-    // --- Data Fetching and Display ---
+    // Initialize
     async function initialLoad() {
         try {
             const [stopsRes, routesRes] = await Promise.all([
                 fetch('/api/gtfs/stops'),
                 fetch('/api/gtfs/routes')
             ]);
-            if (!stopsRes.ok || !routesRes.ok) throw new Error('Failed to fetch initial data');
 
-            allStops = await stopsRes.json();
-            allRoutes = await routesRes.json();
+            if (stopsRes.ok) {
+                allStops = await stopsRes.json();
+                displayStops(allStops);
+            }
 
-            displayStops(allStops);
+            if (routesRes.ok) {
+                allRoutes = await routesRes.json();
+            }
+
             initializeDropdowns();
             connectToSse();
 
@@ -113,58 +511,105 @@
         }
     }
 
+    function initializeDropdowns() {
+        $('#from-stop, #to-stop').select2({
+            placeholder: "Select a stop",
+            data: allStops.map(s => ({id: s.stopName, text: s.stopName}))
+                .sort((a,b) => a.text.localeCompare(b.text))
+        });
+
+        $('#bus-search').select2({
+            placeholder: "Select a bus route",
+            data: allRoutes.map(r => ({
+                id: r.routeShortName,
+                text: `${r.routeShortName} - ${r.routeLongName}`
+            })).sort((a,b) => a.id.localeCompare(b.id, undefined, {numeric: true}))
+        });
+    }
+
     function displayStops(stops) {
         stopMarkers.clearLayers();
         stops.forEach(stop => {
-            const marker = L.circleMarker([stop.stopLat, stop.stopLon], { radius: 5, color: '#2a6496', fillColor: '#3388ff', fillOpacity: 0.8, weight: 1})
-                .addTo(stopMarkers);
+            const marker = L.circleMarker([stop.stopLat, stop.stopLon], {
+                radius: 5,
+                color: '#667eea',
+                fillColor: '#667eea',
+                fillOpacity: 0.6,
+                weight: 2
+            }).addTo(stopMarkers);
 
-            marker.on('click', () => fetchStopSchedule(stop, marker));
-            marker.bindTooltip(stop.stopName);
+            marker.on('click', () => {
+                fetchStopSchedule(stop, marker);
+                // Also load predictions in right panel
+                document.getElementById('stopIdInput').value = stop.stopId || stop.stopName;
+                loadPredictions();
+            });
+
+            marker.bindTooltip(stop.stopName, { direction: 'top', offset: [0, -5] });
         });
     }
 
     async function fetchStopSchedule(stop, marker) {
-        marker.bindPopup(`<div class="schedule-popup"><h4>${stop.stopName}</h4><p>Loading schedule...</p></div>`).openPopup();
+        marker.bindPopup(`<div class="stop-popup"><h4>${stop.stopName}</h4><p>Loading...</p></div>`).openPopup();
+
         try {
             const response = await fetch(`/api/gtfs/stops/${stop.stopId}/schedule`);
             let content;
+
             if (response.status === 204 || !response.ok) {
-                content = `<p class="no-info">No schedule information available for this stop.</p>`;
+                content = `<p style="color: #a0aec0;">No schedule available</p>`;
             } else {
                 const schedule = await response.json();
-                const scheduleItems = schedule.map(item =>
+                const scheduleItems = schedule.slice(0, 5).map(item =>
                     `<li><span class="route-name">${item.routeName}</span> <span>${item.arrivalTime}</span></li>`
                 ).join('');
                 content = `<ul>${scheduleItems}</ul>`;
             }
-            marker.setPopupContent(`<div class="schedule-popup"><h4>${stop.stopName}</h4>${content}</div>`);
+
+            marker.setPopupContent(`<div class="stop-popup"><h4>${stop.stopName}</h4>${content}</div>`);
         } catch (error) {
             console.error('Error fetching schedule:', error);
-            marker.setPopupContent(`<div class="schedule-popup"><h4>${stop.stopName}</h4><p class="no-info">Could not load schedule.</p></div>`);
+            marker.setPopupContent(`<div class="stop-popup"><h4>${stop.stopName}</h4><p style="color: #a0aec0;">Could not load schedule</p></div>`);
         }
     }
-
 
     function connectToSse() {
         if (sseSource) sseSource.close();
         sseSource = new EventSource('/api/sse/vehicles');
         sseSource.onmessage = event => updateBusMarkers(JSON.parse(event.data));
-        sseSource.onerror = () => showToast('Live connection failed. Reconnecting...');
+        sseSource.onerror = () => {
+            console.error('SSE connection error');
+            setTimeout(connectToSse, 5000);
+        };
     }
 
     function updateBusMarkers(vehicles) {
         const receivedBusIds = new Set();
+
         vehicles.forEach(vehicle => {
             const busId = vehicle.id;
             receivedBusIds.add(busId);
             const pos = [vehicle.latitude, vehicle.longitude];
-            const popupContent = `<b>Bus ID:</b> ${vehicle.id}<br><b>Route:</b> ${vehicle.routeId || 'N/A'}<br><button onclick="subscribeToBus('${busId}')">Notify Me</button>`;
+
+            const popupContent = `
+                <div class="bus-popup">
+                    <b>Bus ID:</b> ${vehicle.id}<br>
+                    <b>Route:</b> ${vehicle.routeId || 'N/A'}<br>
+                    <button onclick="subscribeToBus('${busId}')">🔔 Notify Me</button>
+                </div>
+            `;
 
             if (busMarkers[busId]) {
                 busMarkers[busId].setLatLng(pos).setPopupContent(popupContent);
             } else {
-                busMarkers[busId] = L.marker(pos).bindPopup(popupContent).addTo(map);
+                const busIcon = L.divIcon({
+                    html: '🚌',
+                    className: '',
+                    iconSize: [24, 24]
+                });
+                busMarkers[busId] = L.marker(pos, { icon: busIcon })
+                    .bindPopup(popupContent)
+                    .addTo(map);
             }
         });
 
@@ -176,12 +621,12 @@
         });
     }
 
-    // --- User Actions ---
     async function searchRoute() {
         const from = $('#from-stop').val();
         const to = $('#to-stop').val();
+
         if (!from || !to) {
-            showToast("Please select both 'From' and 'To' stops.");
+            showToast("Please select both 'From' and 'To' stops");
             return;
         }
 
@@ -189,45 +634,57 @@
 
         try {
             const response = await fetch(`/api/transit/route?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
-            if (response.status === 404) {
-                 showToast(`Stops not found. Please check spelling.`);
-                 return;
-            }
-            if (!response.ok) throw new Error('Route search failed on the server.');
 
-            const route = await response.json();
-            if (!route || route.length === 0) {
-                showToast(`No direct route found between ${from} and ${to}.`);
+            if (response.status === 404) {
+                showToast('Stops not found. Please check spelling.');
                 return;
             }
+
+            if (!response.ok) throw new Error('Route search failed');
+
+            const route = await response.json();
+
+            if (!route || route.length === 0) {
+                showToast(`No direct route found between ${from} and ${to}`);
+                return;
+            }
+
             const latlngs = route.map(stop => [stop.stopLat, stop.stopLon]);
-            routePolyline = L.polyline(latlngs, { color: 'red' }).addTo(map);
+            routePolyline = L.polyline(latlngs, {
+                color: '#f56565',
+                weight: 4,
+                opacity: 0.7
+            }).addTo(map);
             map.fitBounds(routePolyline.getBounds());
+            showToast('Route displayed on map');
+
         } catch (error) {
             console.error('Error searching for route:', error);
-            showToast('An error occurred while searching for the route.');
+            showToast('An error occurred while searching for the route');
         }
     }
 
     async function searchBus() {
         const query = $('#bus-search').val();
+
         if (!query) {
-            showToast('Please select a bus number to search.');
+            showToast('Please select a bus number to search');
             return;
         }
-        // Since we have all routes, we can just highlight live buses on that route
+
         let foundBuses = false;
+
         Object.values(busMarkers).forEach(marker => {
             const popupText = marker.getPopup().getContent();
-            if(popupText.includes(`<b>Route:</b> ${query}`)){
-                 marker.openPopup();
-                 map.setView(marker.getLatLng(), 14);
-                 foundBuses = true;
+            if (popupText.includes(`<b>Route:</b> ${query}`)) {
+                marker.openPopup();
+                map.setView(marker.getLatLng(), 14);
+                foundBuses = true;
             }
         });
 
-        if(!foundBuses) {
-             showToast(`No live buses found for route ${query} at the moment.`);
+        if (!foundBuses) {
+            showToast(`No live buses found for route ${query} at the moment`);
         }
     }
 
@@ -238,18 +695,155 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ vehicleId: vehicleId })
             });
+
             if (!response.ok) throw new Error('Subscription failed');
-            showToast(`Subscribed to notifications for bus ${vehicleId}`);
+            showToast(`✅ Subscribed to notifications for bus ${vehicleId}`);
         } catch (error) {
             console.error('Subscription error:', error);
-            showToast(`Failed to subscribe to bus ${vehicleId}`);
+            showToast(`❌ Failed to subscribe to bus ${vehicleId}`);
         }
     }
 
-    // --- Initial Load ---
-    initialLoad();
+    // Predictions panel
+    async function loadPredictions() {
+        const stopId = document.getElementById('stopIdInput').value.trim();
 
+        if (!stopId) {
+            showToast('Please enter a stop ID');
+            return;
+        }
+
+        showLoading();
+
+        try {
+            const response = await fetch(`/api/predictions/stop/${stopId}/display?limit=10`);
+
+            if (response.status === 204) {
+                showNoPredictions('No upcoming buses found for this stop');
+                return;
+            }
+
+            if (!response.ok) {
+                throw new Error('Failed to fetch predictions');
+            }
+
+            const data = await response.json();
+            displayPredictions(data);
+            startAutoRefresh(stopId);
+
+        } catch (error) {
+            console.error('Error loading predictions:', error);
+            showNoPredictions('Failed to load predictions. Please check the stop ID.');
+        }
+    }
+
+    function displayPredictions(data) {
+        const container = document.getElementById('predictionsContainer');
+        const stopTitle = document.getElementById('stopTitle');
+        const lastUpdated = document.getElementById('lastUpdated');
+
+        stopTitle.textContent = `Stop ${data.stopId}`;
+        lastUpdated.innerHTML = `
+            <span class="refresh-icon">🔄</span>
+            ${new Date(data.updatedAt).toLocaleTimeString()}
+        `;
+
+        if (!data.predictions || data.predictions.length === 0) {
+            showNoPredictions(data.message || 'No upcoming buses');
+            return;
+        }
+
+        container.innerHTML = data.predictions.map(pred => {
+            const isRealTime = pred.isRealTime;
+            const isSoon = pred.minutesAway <= 5;
+            const isDelayed = pred.delayStatus && pred.delayStatus.includes('late');
+
+            let itemClass = 'prediction-item';
+            if (isRealTime) itemClass += ' realtime';
+            if (isDelayed) itemClass += ' delayed';
+
+            let timeClass = 'minutes-away';
+            if (isSoon) timeClass += ' soon';
+            if (isDelayed) timeClass += ' delayed';
+
+            return `
+                <div class="${itemClass}">
+                    <div class="prediction-top">
+                        <div class="route-info">
+                            <div class="route-number">${pred.routeNumber}</div>
+                            <div class="route-destination">${pred.destination || 'Destination not available'}</div>
+                        </div>
+                        <div class="arrival-time">
+                            <div class="${timeClass}">${pred.minutesAway}</div>
+                            <div class="arrival-label">MIN</div>
+                        </div>
+                    </div>
+
+                    <div class="prediction-details">
+                        ${isRealTime ? `
+                            <div class="detail-badge badge-realtime">
+                                <svg class="badge-icon" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"/>
+                                </svg>
+                                Live
+                            </div>
+                        ` : '<div class="detail-badge">Scheduled</div>'}
+
+                        ${pred.stopsAway ? `<div class="detail-badge">${pred.stopsAway} stops</div>` : ''}
+                        ${pred.delayStatus && pred.delayStatus !== 'On time' ? `<div class="detail-badge badge-delayed">${pred.delayStatus}</div>` : ''}
+                        ${pred.crowdingLevel && pred.crowdingLevel !== 'Unknown' ? `<div class="detail-badge ${pred.crowdingLevel.includes('crowded') || pred.crowdingLevel.includes('Full') ? 'badge-crowded' : ''}">${pred.crowdingLevel}</div>` : ''}
+                        ${pred.vehicleId ? `<div class="detail-badge">🚌 ${pred.vehicleId}</div>` : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function showLoading() {
+        const container = document.getElementById('predictionsContainer');
+        container.innerHTML = `
+            <div class="loading">
+                <div class="loading-spinner"></div>
+                <p>Loading predictions...</p>
+            </div>
+        `;
+    }
+
+    function showNoPredictions(message) {
+        const container = document.getElementById('predictionsContainer');
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-icon">🚫</div>
+                <p>${message}</p>
+            </div>
+        `;
+    }
+
+    function startAutoRefresh(stopId) {
+        if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+        autoRefreshInterval = setInterval(() => loadPredictions(), 30000);
+    }
+
+    function showToast(message) {
+        const toast = document.getElementById('toast');
+        toast.textContent = message;
+        toast.classList.add('show');
+        setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+
+    // Event listeners
+    document.getElementById('stopIdInput').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') loadPredictions();
+    });
+
+    window.addEventListener('beforeunload', () => {
+        if (sseSource) sseSource.close();
+        if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+    });
+
+    // Initialize app
+    initialLoad();
 </script>
+
 </body>
 </html>
-

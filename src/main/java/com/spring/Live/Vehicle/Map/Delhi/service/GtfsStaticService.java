@@ -1,21 +1,19 @@
 package com.spring.Live.Vehicle.Map.Delhi.service;
 
-import com.spring.Live.Vehicle.Map.Delhi.model.Route;
-import com.spring.Live.Vehicle.Map.Delhi.model.Stop;
-import com.spring.Live.Vehicle.Map.Delhi.model.StopTime;
-import com.spring.Live.Vehicle.Map.Delhi.model.Trip;
-import com.spring.Live.Vehicle.Map.Delhi.repository.RouteRepository;
-import com.spring.Live.Vehicle.Map.Delhi.repository.StopRepository;
-import com.spring.Live.Vehicle.Map.Delhi.repository.StopTimeRepository;
-import com.spring.Live.Vehicle.Map.Delhi.repository.TripRepository;
+import com.spring.Live.Vehicle.Map.Delhi.model.*;
+import com.spring.Live.Vehicle.Map.Delhi.model.Calendar;
+import com.spring.Live.Vehicle.Map.Delhi.repository.*;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Map;
-import java.util.function.Function;
+import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -25,77 +23,78 @@ public class GtfsStaticService {
     private StopRepository stopRepository;
 
     @Autowired
-    private RouteRepository routeRepository;
-
-    @Autowired
     private StopTimeRepository stopTimeRepository;
 
     @Autowired
     private TripRepository tripRepository;
 
+    @Autowired
+    private RouteRepository routeRepository;
 
+    @Autowired
+    private CalendarRepository calendarRepository;
+
+    @Cacheable("stops")
     public List<Stop> getAllStops() {
         return stopRepository.findAll();
     }
 
+    @Cacheable("routes")
     public List<Route> getAllRoutes() {
         return routeRepository.findAll();
     }
 
-    public List<Route> searchRoutes(String query) {
-        return routeRepository.findByRouteShortNameContainingOrRouteLongNameContaining(query, query);
-    }
-
-    /**
-     * Retrieves the schedule for a given stop by linking StopTimes, Trips, and Routes.
-     * @param stopId The ID of the stop.
-     * @return A sorted list of maps, each containing "routeName" and "arrivalTime".
-     */
+    @Cacheable(value = "schedules", key = "#stopId")
     public List<Map<String, String>> getScheduleForStop(String stopId) {
-        // 1. Find all stop times for the given stop ID.
-        List<StopTime> stopTimes = stopTimeRepository.findByStopId(stopId);
-        if (stopTimes.isEmpty()) {
-            return Collections.emptyList();
+        // Step 1: Find which services are active today
+        String todayYYYYMMDD = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
+        DayOfWeek todayDayOfWeek = LocalDate.now().getDayOfWeek();
+
+        List<Calendar> activeCalendars = calendarRepository
+                .findActiveServicesForDate(todayYYYYMMDD).stream()
+                .filter(cal -> isServiceActiveToday(cal, todayDayOfWeek))
+                .collect(Collectors.toList());
+
+        Set<String> activeServiceIds = activeCalendars.stream()
+                .map(Calendar::getServiceId)
+                .collect(Collectors.toSet());
+
+        if (activeServiceIds.isEmpty()) {
+            return Collections.emptyList(); // No services running today
         }
 
-        // 2. Extract unique trip IDs from the stop times.
-        List<String> tripIds = stopTimes.stream()
-                .map(StopTime::getTripId)
-                .distinct()
-                .collect(Collectors.toList());
+        // Step 2: Use the optimized query to get schedules for active services
+        List<ScheduleProjection> schedules = stopTimeRepository.findScheduleByStopIdAndServiceIdIn(stopId, activeServiceIds);
 
-        // 3. Find all trips corresponding to these trip IDs.
-        List<Trip> trips = tripRepository.findAllById(tripIds);
-        Map<String, Trip> tripMap = trips.stream()
-                .collect(Collectors.toMap(Trip::getTripId, Function.identity()));
-
-        // 4. Extract unique route IDs from the trips.
-        List<String> routeIds = trips.stream()
-                .map(Trip::getRouteId)
-                .distinct()
-                .collect(Collectors.toList());
-
-        // 5. Find all routes corresponding to these route IDs.
-        List<Route> routes = routeRepository.findAllById(routeIds);
-        Map<String, Route> routeMap = routes.stream()
-                .collect(Collectors.toMap(Route::getRouteId, Function.identity()));
-
-        // 6. Build the schedule by combining the data.
-        return stopTimes.stream()
-                .map(stopTime -> {
-                    Trip trip = tripMap.get(stopTime.getTripId());
-                    if (trip == null) return null;
-                    Route route = routeMap.get(trip.getRouteId());
-                    if (route == null) return null;
-
-                    return Map.of(
-                            "routeName", route.getRouteShortName(),
-                            "arrivalTime", stopTime.getArrivalTime()
-                    );
+        // Step 3: Filter for future times and format the output
+        LocalTime now = LocalTime.now(ZoneId.of("Asia/Kolkata"));
+        return schedules.stream()
+                .map(s -> Map.of(
+                        "routeName", s.getRouteShortName(),
+                        "arrivalTime", s.getArrivalTime()
+                ))
+                .filter(entry -> {
+                    try {
+                        LocalTime arrivalTime = LocalTime.parse(entry.get("arrivalTime"), DateTimeFormatter.ofPattern("HH:mm:ss"));
+                        return arrivalTime.isAfter(now);
+                    } catch (DateTimeParseException e) {
+                        return false; // Exclude if parsing fails
+                    }
                 })
-                .filter(scheduleEntry -> scheduleEntry != null)
-                .sorted(Comparator.comparing(entry -> entry.get("arrivalTime"))) // Sort by arrival time
+                .sorted(Comparator.comparing(e -> e.get("arrivalTime")))
+                .limit(10) // Only show the next 10 upcoming buses
                 .collect(Collectors.toList());
     }
-}
 
+    private boolean isServiceActiveToday(Calendar cal, DayOfWeek day) {
+        return switch (day) {
+            case MONDAY -> cal.isMonday();
+            case TUESDAY -> cal.isTuesday();
+            case WEDNESDAY -> cal.isWednesday();
+            case THURSDAY -> cal.isThursday();
+            case FRIDAY -> cal.isFriday();
+            case SATURDAY -> cal.isSaturday();
+            case SUNDAY -> cal.isSunday();
+        };
+    }
+}
