@@ -6,10 +6,10 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface StopRepository extends JpaRepository<Stop, String> {
-    @Query("SELECT s FROM Stop s WHERE " +
-            "s.stopName LIKE %?1% OR s.stopCode LIKE %?1%")
-    List<Stop> searchByNameOrCode(String keyword);
+    Optional<Stop> findByStopName(String stopName);
+
 }

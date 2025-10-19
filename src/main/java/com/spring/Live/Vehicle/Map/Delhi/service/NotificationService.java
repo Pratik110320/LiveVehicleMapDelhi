@@ -1,106 +1,63 @@
 package com.spring.Live.Vehicle.Map.Delhi.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.spring.Live.Vehicle.Map.Delhi.model.Vehicle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Sinks;
 
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 
 @Service
 public class NotificationService {
 
-    private static final Logger log = LoggerFactory.getLogger(NotificationService.class);
-    private final List<SseEmitter> emitters = new CopyOnWriteArrayList<>();
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private static final Logger logger = LoggerFactory.getLogger(NotificationService.class);
 
-    public void addEmitter(SseEmitter emitter) {
-        emitters.add(emitter);
-        log.info("Added SSE emitter. total={}", emitters.size());
-    }
-
-    public void removeEmitter(SseEmitter emitter) {
-        boolean removed = emitters.remove(emitter);
-        if (removed) {
-            log.info("Removed SSE emitter. total={}", emitters.size());
+    // This set will store the vehicle IDs that a user is subscribed to.
+    // In a real-world application, this would be tied to user sessions or stored in a database.
+    private final Set<String> subscriptions = Collections.synchronizedSet(new HashSet<>());
+    private final Sinks.Many<String> sink = Sinks.many().multicast().onBackpressureBuffer();
+    private final Flux<String> flux = sink.asFlux();
+    /**
+     * Subscribes a user to receive notifications for a specific vehicle.
+     * This method adds the vehicleId to a set of subscriptions.
+     * @param vehicleId The ID of the vehicle to subscribe to.
+     */
+    public void subscribe(String vehicleId) {
+        if (vehicleId != null && !vehicleId.trim().isEmpty()) {
+            subscriptions.add(vehicleId);
+            logger.info("User subscribed to notifications for vehicle ID: {}", vehicleId);
+        } else {
+            logger.warn("Attempted to subscribe with a null or empty vehicleId.");
         }
     }
 
     /**
-     * Public entry point: accept a List of vehicles.
+     * Checks if there is a subscription for a given vehicle ID.
+     * @param vehicleId The vehicle ID to check.
+     * @return true if a subscription exists, false otherwise.
      */
-    public void sendVehicleUpdates(List<Vehicle> vehicles) {
-        if (vehicles == null) {
-            log.debug("sendVehicleUpdates called with null list; nothing to send.");
-            return;
-        }
-        sendVehicleUpdateInternal(vehicles);
+    public boolean isSubscribed(String vehicleId) {
+        return subscriptions.contains(vehicleId);
     }
 
     /**
-     * Overload: accept a Map of vehicles (most stores use Map<id, Vehicle>).
-     * Converts to a List and delegates to the List-based method.
+     * Unsubscribes a user from notifications for a specific vehicle.
+     * @param vehicleId The ID of the vehicle to unsubscribe from.
      */
-    public void sendVehicleUpdates(Map<String, Vehicle> vehicleMap) {
-        if (vehicleMap == null) {
-            log.debug("sendVehicleUpdates called with null map; nothing to send.");
-            return;
-        }
-        Collection<Vehicle> values = vehicleMap.values();
-        List<Vehicle> vehicles = new ArrayList<>(values);
-        sendVehicleUpdateInternal(vehicles);
+    public void unsubscribe(String vehicleId) {
+        subscriptions.remove(vehicleId);
+        logger.info("User unsubscribed from notifications for vehicle ID: {}", vehicleId);
     }
 
-    /**
-     * Single internal method that serializes and sends SSE event to all emitters.
-     */
-    private void sendVehicleUpdateInternal(List<Vehicle> vehicles) {
-        String jsonData;
-        try {
-            Map<String, Object> eventData = Map.of("type", "vehicles", "payload", vehicles);
-            jsonData = objectMapper.writeValueAsString(eventData);
-        } catch (JsonProcessingException e) {
-            log.error("Error serializing vehicle data for SSE", e);
-            return;
-        }
-
-        // Send as unnamed event so browser `EventSource.onmessage` receives it
-        SseEmitter.SseEventBuilder event = SseEmitter.event().data(jsonData);
-        sendAllEmitters(event);
+    public void sendNotification(String message) {
+        logger.info("Broadcasting notification: {}", message);
+        sink.tryEmitNext(message);
     }
 
-    public void sendHeartbeat() {
-        SseEmitter.SseEventBuilder event = SseEmitter.event().name("heartbeat").data("ping");
-        sendAllEmitters(event);
-    }
-
-    private void sendAllEmitters(SseEmitter.SseEventBuilder event) {
-        for (SseEmitter emitter : emitters) {
-            try {
-                emitter.send(event);
-            } catch (IOException e) {
-                log.warn("Error sending to emitter (will remove). msg={}", e.getMessage());
-                removeEmitter(emitter);
-            } catch (IllegalStateException ise) {
-                // emitter already completed / closed
-                log.debug("Emitter in illegal state (removing). msg={}", ise.getMessage());
-                removeEmitter(emitter);
-            } catch (Exception ex) {
-                log.error("Unexpected error sending SSE event: {}", ex.getMessage(), ex);
-                removeEmitter(emitter);
-            }
-        }
-    }
-
-    public int getEmitterCount() {
-        return emitters.size();
+    public Flux<String> getNotificationStream() {
+        return this.flux;
     }
 }

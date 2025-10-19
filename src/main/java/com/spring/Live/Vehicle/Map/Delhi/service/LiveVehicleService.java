@@ -62,7 +62,6 @@ public class LiveVehicleService {
             logger.info("Successfully processed and updated {} vehicles.", updatedCount);
 
             // Notify SSE clients with the full updated list
-            notificationService.sendVehicleUpdates(vehicleStoreService.getAllVehicles());
 
         } catch (IOException e) {
             logger.error("Error fetching or parsing GTFS-RT data.", e);

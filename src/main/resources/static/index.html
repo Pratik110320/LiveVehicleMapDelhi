@@ -3,1184 +3,253 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Delhi Live Transit Map</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <title>Delhi Live Bus Map</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; background-color: #f4f4f4; }
+        #map { flex-grow: 1; border-bottom: 1px solid #ddd; }
+        .controls { background: #fff; padding: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); z-index: 1000; display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+        .control-group { display: flex; flex-direction: column; }
+        .control-group label { font-size: 12px; color: #555; margin-bottom: 4px; }
+        .controls .select2-container { width: 200px !important; }
+        .controls button { cursor: pointer; background: #007bff; color: white; border: none; padding: 10px 15px; border-radius: 5px; font-weight: bold; transition: background-color 0.2s; }
+        .controls button:hover { background: #0056b3; }
 
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            overflow: hidden;
-        }
+        #toast { visibility: hidden; min-width: 250px; margin-left: -125px; background-color: #333; color: #fff; text-align: center; border-radius: 5px; padding: 16px; position: fixed; z-index: 2000; left: 50%; bottom: 30px; font-size: 16px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
+        #toast.show { visibility: visible; animation: fadein 0.5s, fadeout 0.5s 2.5s; }
+        @keyframes fadein { from {bottom: 0; opacity: 0;} to {bottom: 30px; opacity: 1;} }
+        @keyframes fadeout { from {bottom: 30px; opacity: 1;} to {bottom: 0; opacity: 0;} }
 
-        #app {
-            display: flex;
-            height: 100vh;
-            width: 100vw;
-        }
-
-        /* Sidebar */
-        #sidebar {
-            width: 380px;
-            background: rgba(255, 255, 255, 0.98);
-            backdrop-filter: blur(10px);
-            box-shadow: 4px 0 20px rgba(0, 0, 0, 0.1);
-            display: flex;
-            flex-direction: column;
-            z-index: 1000;
-            transition: transform 0.3s ease;
-        }
-
-        #sidebar.collapsed {
-            transform: translateX(-380px);
-        }
-
-        .sidebar-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 20px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-        }
-
-        .sidebar-header h1 {
-            font-size: 24px;
-            margin-bottom: 5px;
-        }
-
-        .sidebar-header p {
-            font-size: 13px;
-            opacity: 0.9;
-        }
-
-        .status-bar {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 10px;
-            padding: 15px;
-            background: #f8f9fa;
-            border-bottom: 1px solid #e0e0e0;
-        }
-
-        .status-item {
-            text-align: center;
-        }
-
-        .status-value {
-            font-size: 24px;
-            font-weight: bold;
-            color: #667eea;
-            transition: color 0.3s;
-        }
-
-        .status-value.warning {
-            color: #dc3545;
-        }
-
-        .status-label {
-            font-size: 11px;
-            color: #666;
-            margin-top: 4px;
-        }
-
-        .tabs {
-            display: flex;
-            background: #f8f9fa;
-            border-bottom: 2px solid #e0e0e0;
-        }
-
-        .tab {
-            flex: 1;
-            padding: 15px;
-            text-align: center;
-            cursor: pointer;
-            font-weight: 500;
-            color: #666;
-            transition: all 0.3s;
-            border-bottom: 3px solid transparent;
-        }
-
-        .tab:hover {
-            background: #e9ecef;
-        }
-
-        .tab.active {
-            color: #667eea;
-            border-bottom-color: #667eea;
-            background: white;
-        }
-
-        .tab-content {
-            flex: 1;
-            overflow-y: auto;
-            padding: 20px;
-        }
-
-        .tab-panel {
-            display: none;
-        }
-
-        .tab-panel.active {
-            display: block;
-        }
-
-        /* Form Styles */
-        .input-group {
-            margin-bottom: 15px;
-        }
-
-        .input-group label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: 500;
-            color: #333;
-            font-size: 14px;
-        }
-
-        .input-group input,
-        .input-group select {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 14px;
-            transition: border-color 0.3s;
-        }
-
-        .input-group input:focus,
-        .input-group select:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-
-        .btn {
-            width: 100%;
-            padding: 14px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 15px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
-        }
-
-        .btn:active {
-            transform: translateY(0);
-        }
-
-        .btn-secondary {
-            background: #6c757d;
-            margin-top: 10px;
-        }
-
-        .btn-success {
-            background: #28a745;
-            margin-top: 10px;
-        }
-
-        /* Results */
-        .result-card {
-            background: white;
-            border: 2px solid #e0e0e0;
-            border-radius: 10px;
-            padding: 15px;
-            margin-bottom: 12px;
-            transition: all 0.3s;
-            cursor: pointer;
-        }
-
-        .result-card:hover {
-            border-color: #667eea;
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
-            transform: translateY(-2px);
-        }
-
-        .result-title {
-            font-weight: 600;
-            color: #333;
-            margin-bottom: 8px;
-            font-size: 15px;
-        }
-
-        .result-detail {
-            font-size: 13px;
-            color: #666;
-            margin: 4px 0;
-        }
-
-        .result-badge {
-            display: inline-block;
-            padding: 4px 10px;
-            background: #667eea;
-            color: white;
-            border-radius: 12px;
-            font-size: 11px;
-            margin-right: 6px;
-            margin-top: 6px;
-        }
-
-        .result-badge.success {
-            background: #28a745;
-        }
-
-        .result-badge.warning {
-            background: #ffc107;
-            color: #212529;
-        }
-
-        .empty-state {
-            text-align: center;
-            padding: 40px 20px;
-            color: #999;
-        }
-
-        .empty-state svg {
-            width: 80px;
-            height: 80px;
-            margin-bottom: 15px;
-            opacity: 0.5;
-        }
-
-        /* Map Container */
-        #map-container {
-            flex: 1;
-            position: relative;
-        }
-
-        #map {
-            width: 100%;
-            height: 100%;
-        }
-
-        /* Toggle Button */
-        #toggle-sidebar {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            z-index: 1001;
-            background: white;
-            border: none;
-            border-radius: 8px;
-            padding: 12px 15px;
-            cursor: pointer;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-            transition: all 0.3s;
-        }
-
-        #toggle-sidebar:hover {
-            transform: scale(1.05);
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-        }
-
-        .loading {
-            text-align: center;
-            padding: 20px;
-            color: #667eea;
-        }
-
-        .spinner {
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #667eea;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 20px auto;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        /* Custom Popup */
-        .leaflet-popup-content-wrapper {
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-        }
-
-        .popup-content {
-            padding: 10px;
-        }
-
-        .popup-title {
-            font-weight: 600;
-            color: #667eea;
-            margin-bottom: 8px;
-            font-size: 16px;
-        }
-
-        .popup-detail {
-            font-size: 13px;
-            color: #555;
-            margin: 4px 0;
-        }
-
-        /* Map Controls */
-        .map-controls {
-            position: absolute;
-            top: 80px;
-            left: 20px;
-            z-index: 1000;
-            background: white;
-            border-radius: 8px;
-            padding: 15px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-            min-width: 200px;
-        }
-
-        .map-controls h3 {
-            margin-bottom: 10px;
-            color: #333;
-            font-size: 14px;
-        }
-
-        .control-group {
-            margin-bottom: 10px;
-        }
-
-        .control-group label {
-            display: flex;
-            align-items: center;
-            cursor: pointer;
-            font-size: 13px;
-        }
-
-        .control-group input {
-            margin-right: 8px;
-        }
-
-        /* Location Button */
-        .locate-btn {
-            position: absolute;
-            bottom: 100px;
-            right: 20px;
-            z-index: 1000;
-            background: white;
-            border: none;
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            cursor: pointer;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.3s;
-        }
-
-        .locate-btn:hover {
-            transform: scale(1.1);
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-        }
-
-        /* Pin Mode Indicator */
-        .pin-mode {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            z-index: 1000;
-            background: #ff6b6b;
-            color: white;
-            padding: 10px 15px;
-            border-radius: 20px;
-            font-size: 14px;
-            font-weight: 600;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-            display: none;
-        }
-
-        @media (max-width: 768px) {
-            #sidebar {
-                width: 100%;
-                max-width: 380px;
-            }
-            .map-controls {
-                top: 70px;
-                left: 10px;
-                right: 10px;
-                min-width: auto;
-            }
-        }
+        .leaflet-popup-content-wrapper { border-radius: 5px; }
+        .schedule-popup h4 { margin: 0 0 10px; font-size: 16px; border-bottom: 1px solid #eee; padding-bottom: 5px;}
+        .schedule-popup ul { list-style: none; padding: 0; margin: 0; max-height: 200px; overflow-y: auto; }
+        .schedule-popup li { padding: 4px 0; display: flex; justify-content: space-between; font-size: 14px; }
+        .schedule-popup li .route-name { font-weight: bold; color: #007bff; }
+        .schedule-popup .no-info { color: #888; }
     </style>
 </head>
 <body>
-<div id="app">
-    <div id="sidebar">
-        <div class="sidebar-header">
-            <h1>🚌 Delhi Transit</h1>
-            <p>Real-time vehicle tracking & route planning</p>
-        </div>
 
-        <div class="status-bar">
-            <div class="status-item">
-                <div class="status-value" id="vehicleCount">0</div>
-                <div class="status-label">Active Buses</div>
-            </div>
-            <div class="status-item">
-                <div class="status-value" id="feedAge">--</div>
-                <div class="status-label">Feed Age (s)</div>
-            </div>
-            <div class="status-item">
-                <div class="status-value" id="mapMarkers">0</div>
-                <div class="status-label">On Map</div>
-            </div>
-        </div>
-
-        <div class="tabs">
-            <div class="tab active" data-tab="nearby">Nearby</div>
-            <div class="tab" data-tab="routes">Routes</div>
-            <div class="tab" data-tab="search">Search</div>
-        </div>
-
-        <div class="tab-content">
-            <!-- Nearby Tab -->
-            <div class="tab-panel active" id="nearby-panel">
-                <div class="input-group">
-                    <label>📍 Click on map to set location, or use current location</label>
-                    <div style="display: flex; gap: 10px; margin-top: 10px;">
-                        <button class="btn" onclick="setPinMode('nearby')">Set Pin on Map</button>
-                        <button class="btn btn-secondary" onclick="useCurrentLocation()">Use My Location</button>
-                    </div>
-                </div>
-
-                <div class="input-group">
-                    <label>Search Radius (km)</label>
-                    <input type="number" id="nearbyRadius" value="1.0" min="0.1" max="5.0" step="0.1">
-                </div>
-
-                <div class="input-group">
-                    <label>Selected Location</label>
-                    <div style="display: flex; gap: 10px;">
-                        <input type="text" id="selectedLat" placeholder="Latitude" readonly style="flex: 1;">
-                        <input type="text" id="selectedLon" placeholder="Longitude" readonly style="flex: 1;">
-                    </div>
-                </div>
-
-                <button class="btn" onclick="findNearbyStops()">Find Nearby Stops</button>
-                <button class="btn btn-success" onclick="loadAllStops()">Show All Stops</button>
-
-                <div id="nearbyResults" style="margin-top: 20px;"></div>
-            </div>
-
-            <!-- Routes Tab -->
-            <div class="tab-panel" id="routes-panel">
-                <div class="input-group">
-                    <label>📍 Set Origin & Destination Pins on Map</label>
-                    <div style="display: flex; gap: 10px; margin-top: 10px;">
-                        <button class="btn" onclick="setPinMode('origin')">Set Origin Pin</button>
-                        <button class="btn" onclick="setPinMode('destination')">Set Destination Pin</button>
-                    </div>
-                </div>
-
-                <div class="input-group">
-                    <label>Origin Location</label>
-                    <div style="display: flex; gap: 10px;">
-                        <input type="text" id="originLat" placeholder="Origin Lat" readonly style="flex: 1;">
-                        <input type="text" id="originLon" placeholder="Origin Lon" readonly style="flex: 1;">
-                    </div>
-                </div>
-
-                <div class="input-group">
-                    <label>Destination Location</label>
-                    <div style="display: flex; gap: 10px;">
-                        <input type="text" id="destLat" placeholder="Dest Lat" readonly style="flex: 1;">
-                        <input type="text" id="destLon" placeholder="Dest Lon" readonly style="flex: 1;">
-                    </div>
-                </div>
-
-                <button class="btn" onclick="planRouteByPins()">Plan Route</button>
-                <button class="btn btn-secondary" onclick="calculateFareByPins()">Calculate Fare</button>
-
-                <div id="routeResults" style="margin-top: 20px;"></div>
-            </div>
-
-            <!-- Search Tab -->
-            <div class="tab-panel" id="search-panel">
-                <div class="input-group">
-                    <label>🔍 Search Stops</label>
-                    <input type="text" id="searchStops" placeholder="Search by name or code">
-                </div>
-                <button class="btn" onclick="searchStops()">Search Stops</button>
-
-                <div class="input-group" style="margin-top: 20px;">
-                    <label>🔍 Search Routes</label>
-                    <input type="text" id="searchRoutes" placeholder="Search routes">
-                </div>
-                <button class="btn" onclick="searchRoutes()">Search Routes</button>
-
-                <div id="searchResults" style="margin-top: 20px;"></div>
-            </div>
-        </div>
+<div class="controls">
+    <div class="control-group">
+        <label for="from-stop">From Stop</label>
+        <select id="from-stop"></select>
     </div>
-
-    <div id="map-container">
-        <button id="toggle-sidebar" onclick="toggleSidebar()">☰</button>
-
-        <!-- Map Controls -->
-        <div class="map-controls">
-            <h3>Map Controls</h3>
-            <div class="control-group">
-                <label>
-                    <input type="checkbox" id="toggleBuses" checked onchange="toggleBusesVisibility()">
-                    Show Buses
-                </label>
-            </div>
-            <div class="control-group">
-                <label>
-                    <input type="checkbox" id="toggleStops" checked onchange="toggleStopsVisibility()">
-                    Show Stops
-                </label>
-            </div>
-            <div class="control-group">
-                <label>
-                    <input type="checkbox" id="toggleAllStops" onchange="toggleAllStopsVisibility()">
-                    Show All Stops
-                </label>
-            </div>
-        </div>
-
-        <!-- Pin Mode Indicator -->
-        <div class="pin-mode" id="pinModeIndicator">
-            Click on map to set pin
-        </div>
-
-        <button class="locate-btn" onclick="locateUser()" title="Find My Location">📍</button>
-        <div id="map"></div>
+    <div class="control-group">
+        <label for="to-stop">To Stop</label>
+        <select id="to-stop"></select>
     </div>
+    <button onclick="searchRoute()">Find Route</button>
+
+    <div style="border-left: 1px solid #ccc; height: 30px; margin: 0 15px;"></div>
+
+    <div class="control-group">
+        <label for="bus-search">Find Bus by Number</label>
+        <select id="bus-search"></select>
+    </div>
+    <button onclick="searchBus()">Search</button>
 </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<div id="map"></div>
+<div id="toast"></div>
+
 <script>
-    // Configuration
-    const API_BASE = 'http://localhost:8080';
-    let map;
-    let vehicleMarkers = {};
-    let stopMarkers = {};
-    let allStopMarkers = {};
-    let userMarker = null;
-    let originMarker = null;
-    let destinationMarker = null;
-    let eventSource = null;
-    let currentPinMode = null;
-    let allStopsVisible = false;
+    const map = L.map('map').setView([28.6139, 77.2090], 11);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
 
-    // Custom Icons
-    const busIcon = L.divIcon({
-        html: '<div style="background: #667eea; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); font-size: 14px;">🚌</div>',
-        iconSize: [28, 28],
-        iconAnchor: [14, 14],
-        popupAnchor: [0, -14],
-        className: 'bus-icon'
-    });
+    let busMarkers = {};
+    let stopMarkers = L.layerGroup().addTo(map);
+    let routePolyline = null;
+    let sseSource = null;
+    let allStops = [];
+    let allRoutes = [];
 
-    const busStopIcon = L.divIcon({
-        html: '<div style="background: #28a745; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); font-size: 12px;">🚏</div>',
-        iconSize: [24, 24],
-        iconAnchor: [12, 12],
-        popupAnchor: [0, -12],
-        className: 'stop-icon'
-    });
-
-    const originIcon = L.divIcon({
-        html: '<div style="background: #007bff; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); font-size: 14px;">📍</div>',
-        iconSize: [30, 30],
-        iconAnchor: [15, 15],
-        popupAnchor: [0, -15],
-        className: 'origin-icon'
-    });
-
-    const destinationIcon = L.divIcon({
-        html: '<div style="background: #dc3545; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); font-size: 14px;">🎯</div>',
-        iconSize: [30, 30],
-        iconAnchor: [15, 15],
-        popupAnchor: [0, -15],
-        className: 'destination-icon'
-    });
-
-    // Initialize Map
-    function initMap() {
-        map = L.map('map').setView([28.6139, 77.2090], 12);
-
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap contributors',
-            maxZoom: 19
-        }).addTo(map);
-
-        // Add click listener for pin placement
-        map.on('click', function(e) {
-            if (currentPinMode) {
-                handleMapClick(e.latlng.lat, e.latlng.lng);
-            }
+    // --- UI Initialization ---
+    function initializeDropdowns() {
+        $('#from-stop, #to-stop').select2({
+            placeholder: "Select a stop",
+            data: allStops.map(s => ({id: s.stopName, text: s.stopName})).sort((a,b) => a.text.localeCompare(b.text))
         });
-
-        // Start listening for vehicle updates
-        connectSSE();
-
-        // Also poll via REST API as backup (every 5 seconds)
-        fetchVehiclesREST();
-        setInterval(fetchVehiclesREST, 5000);
-
-        updateStatus();
-        setInterval(updateStatus, 10000);
-
-        // Load all stops initially
-        loadAllStops();
+        $('#bus-search').select2({
+            placeholder: "Select a bus route",
+            data: allRoutes.map(r => ({id: r.routeShortName, text: `${r.routeShortName} - ${r.routeLongName}`})).sort((a,b) => a.id.localeCompare(b.id, undefined, {numeric: true}))
+        });
     }
 
-    // Handle map click for pin placement
-    function handleMapClick(lat, lng) {
-        switch(currentPinMode) {
-            case 'nearby':
-                document.getElementById('selectedLat').value = lat.toFixed(6);
-                document.getElementById('selectedLon').value = lng.toFixed(6);
-
-                if (userMarker) map.removeLayer(userMarker);
-                userMarker = L.marker([lat, lng], { icon: originIcon })
-                    .addTo(map)
-                    .bindPopup('Selected Location')
-                    .openPopup();
-                break;
-
-            case 'origin':
-                document.getElementById('originLat').value = lat.toFixed(6);
-                document.getElementById('originLon').value = lng.toFixed(6);
-
-                if (originMarker) map.removeLayer(originMarker);
-                originMarker = L.marker([lat, lng], { icon: originIcon })
-                    .addTo(map)
-                    .bindPopup('Origin Location')
-                    .openPopup();
-                break;
-
-            case 'destination':
-                document.getElementById('destLat').value = lat.toFixed(6);
-                document.getElementById('destLon').value = lng.toFixed(6);
-
-                if (destinationMarker) map.removeLayer(destinationMarker);
-                destinationMarker = L.marker([lat, lng], { icon: destinationIcon })
-                    .addTo(map)
-                    .bindPopup('Destination Location')
-                    .openPopup();
-                break;
-        }
-
-        // Exit pin mode after placement
-        exitPinMode();
+    // --- Toast Notification ---
+    function showToast(message) {
+        const toast = document.getElementById("toast");
+        toast.textContent = message;
+        toast.className = "show";
+        setTimeout(() => { toast.className = toast.className.replace("show", ""); }, 3000);
     }
 
-    // Set pin mode
-    function setPinMode(mode) {
-        currentPinMode = mode;
-        const indicator = document.getElementById('pinModeIndicator');
-
-        switch(mode) {
-            case 'nearby':
-                indicator.textContent = 'Click on map to set location for nearby stops';
-                break;
-            case 'origin':
-                indicator.textContent = 'Click on map to set origin location';
-                break;
-            case 'destination':
-                indicator.textContent = 'Click on map to set destination location';
-                break;
-        }
-
-        indicator.style.display = 'block';
-    }
-
-    // Exit pin mode
-    function exitPinMode() {
-        currentPinMode = null;
-        document.getElementById('pinModeIndicator').style.display = 'none';
-    }
-
-    // Use current location
-    function useCurrentLocation() {
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                (position) => {
-                    const lat = position.coords.latitude;
-                    const lon = position.coords.longitude;
-
-                    document.getElementById('selectedLat').value = lat.toFixed(6);
-                    document.getElementById('selectedLon').value = lon.toFixed(6);
-
-                    if (userMarker) map.removeLayer(userMarker);
-                    userMarker = L.marker([lat, lon], { icon: originIcon })
-                        .addTo(map)
-                        .bindPopup('Your Current Location')
-                        .openPopup();
-
-                    map.setView([lat, lon], 14);
-                },
-                (error) => {
-                    alert('Unable to get your location: ' + error.message);
-                }
-            );
-        } else {
-            alert('Geolocation is not supported by your browser');
-        }
-    }
-
-    // Load all stops
-    async function loadAllStops() {
+    // --- Data Fetching and Display ---
+    async function initialLoad() {
         try {
-            const response = await fetch(`${API_BASE}/api/gtfs/stops`);
-            const stops = await response.json();
+            const [stopsRes, routesRes] = await Promise.all([
+                fetch('/api/gtfs/stops'),
+                fetch('/api/gtfs/routes')
+            ]);
+            if (!stopsRes.ok || !routesRes.ok) throw new Error('Failed to fetch initial data');
 
-            // Clear existing all stop markers
-            Object.values(allStopMarkers).forEach(marker => map.removeLayer(marker));
-            allStopMarkers = {};
+            allStops = await stopsRes.json();
+            allRoutes = await routesRes.json();
 
-            // Add all stops to map
-            stops.forEach(stop => {
-                const marker = L.marker([stop.stopLat, stop.stopLon], {
-                    icon: busStopIcon
-                }).addTo(map);
+            displayStops(allStops);
+            initializeDropdowns();
+            connectToSse();
 
-                marker.bindPopup(`
-                    <div class="popup-content">
-                        <div class="popup-title">🚏 ${stop.stopName}</div>
-                        <div class="popup-detail"><strong>ID:</strong> ${stop.stopId}</div>
-                        <div class="popup-detail"><strong>Code:</strong> ${stop.stopCode || 'N/A'}</div>
-                        <button onclick="getNextBuses('${stop.stopId}')" style="margin-top: 8px; padding: 5px 10px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                            Next Buses
-                        </button>
-                    </div>
-                `);
-
-                allStopMarkers[stop.stopId] = marker;
-            });
-
-            allStopsVisible = true;
-            document.getElementById('toggleAllStops').checked = true;
-
-            // Show success message
-            const results = document.getElementById('nearbyResults');
-            results.innerHTML = `
-                <div class="result-card">
-                    <div class="result-title">✅ All Stops Loaded</div>
-                    <div class="result-detail">Loaded ${stops.length} bus stops on the map</div>
-                    <span class="result-badge success">${stops.length} stops</span>
-                </div>
-            `;
-
-        } catch (err) {
-            console.error('Error loading all stops:', err);
-            const results = document.getElementById('nearbyResults');
-            results.innerHTML = `<div class="empty-state">Error loading stops: ${err.message}</div>`;
+        } catch (error) {
+            console.error('Error on initial load:', error);
+            showToast('Could not load initial bus data.');
         }
     }
 
-    // Find nearby stops using pin location
-    async function findNearbyStops() {
-        const lat = parseFloat(document.getElementById('selectedLat').value);
-        const lon = parseFloat(document.getElementById('selectedLon').value);
-        const radius = parseFloat(document.getElementById('nearbyRadius').value);
+    function displayStops(stops) {
+        stopMarkers.clearLayers();
+        stops.forEach(stop => {
+            const marker = L.circleMarker([stop.stopLat, stop.stopLon], { radius: 5, color: '#2a6496', fillColor: '#3388ff', fillOpacity: 0.8, weight: 1})
+                .addTo(stopMarkers);
 
-        if (!lat || !lon) {
-            alert('Please set a location first by clicking on the map or using your current location');
-            return;
-        }
+            marker.on('click', () => fetchStopSchedule(stop, marker));
+            marker.bindTooltip(stop.stopName);
+        });
+    }
 
-        const results = document.getElementById('nearbyResults');
-        results.innerHTML = '<div class="loading"><div class="spinner"></div>Finding nearby stops...</div>';
-
+    async function fetchStopSchedule(stop, marker) {
+        marker.bindPopup(`<div class="schedule-popup"><h4>${stop.stopName}</h4><p>Loading schedule...</p></div>`).openPopup();
         try {
-            const response = await fetch(`${API_BASE}/api/transit/stops/nearby?lat=${lat}&lon=${lon}&radius=${radius}`);
-            const stops = await response.json();
-
-            // Clear old nearby stop markers but keep all stops
-            Object.values(stopMarkers).forEach(m => map.removeLayer(m));
-            stopMarkers = {};
-
-            if (stops.length === 0) {
-                results.innerHTML = '<div class="empty-state">No stops found within the specified radius</div>';
-                return;
-            }
-
-            results.innerHTML = stops.map(stop => {
-                // Add stop marker (will be on top of all stops)
-                const marker = L.marker([stop.stop.lat, stop.stop.lon], {
-                    icon: busStopIcon,
-                    zIndexOffset: 1000 // Make sure these are on top
-                }).addTo(map);
-
-                marker.bindPopup(`
-                    <div class="popup-content">
-                        <div class="popup-title">🚏 ${stop.stop.stopName}</div>
-                        <div class="popup-detail"><strong>ID:</strong> ${stop.stop.stopId}</div>
-                        <div class="popup-detail"><strong>Distance:</strong> ${stop.distance.toFixed(2)} km</div>
-                        <button onclick="getNextBuses('${stop.stop.stopId}')" style="margin-top: 8px; padding: 5px 10px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                            Next Buses
-                        </button>
-                    </div>
-                `);
-
-                stopMarkers[stop.stop.stopId] = marker;
-
-                return `
-                    <div class="result-card" onclick="showStop('${stop.stop.stopId}', ${stop.stop.lat}, ${stop.stop.lon})">
-                        <div class="result-title">🚏 ${stop.stop.stopName}</div>
-                        <div class="result-detail">📍 ${stop.distance.toFixed(2)} km away</div>
-                        <div class="result-detail">ID: ${stop.stop.stopId}</div>
-                        <button class="result-badge" onclick="event.stopPropagation(); getNextBuses('${stop.stop.stopId}')">Next Buses</button>
-                    </div>
-                `;
-            }).join('');
-
-        } catch (err) {
-            results.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
-        }
-    }
-
-    // Plan route using pins
-    async function planRouteByPins() {
-        const originLat = parseFloat(document.getElementById('originLat').value);
-        const originLon = parseFloat(document.getElementById('originLon').value);
-        const destLat = parseFloat(document.getElementById('destLat').value);
-        const destLon = parseFloat(document.getElementById('destLon').value);
-
-        if (!originLat || !originLon || !destLat || !destLon) {
-            alert('Please set both origin and destination locations first');
-            return;
-        }
-
-        const results = document.getElementById('routeResults');
-        results.innerHTML = '<div class="loading"><div class="spinner"></div>Finding routes...</div>';
-
-        try {
-            const response = await fetch(`${API_BASE}/api/transit/routes/plan?originLat=${originLat}&originLon=${originLon}&destLat=${destLat}&destLon=${destLon}`);
-
-            if (response.status === 204) {
-                results.innerHTML = '<div class="empty-state">No routes found between these locations</div>';
-                return;
-            }
-
-            const routes = await response.json();
-
-            results.innerHTML = routes.map(route => `
-                <div class="result-card">
-                    <div class="result-title">🚌 ${route.route.routeShortName} - ${route.route.routeLongName}</div>
-                    <div class="result-detail">📍 ${route.totalStops} stops</div>
-                    <div class="result-detail">🕒 Estimated travel time</div>
-                    <span class="result-badge">Direct Route</span>
-                </div>
-            `).join('');
-
-        } catch (err) {
-            results.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
-        }
-    }
-
-    // Calculate fare using pins
-    async function calculateFareByPins() {
-        const originLat = parseFloat(document.getElementById('originLat').value);
-        const originLon = parseFloat(document.getElementById('originLon').value);
-        const destLat = parseFloat(document.getElementById('destLat').value);
-        const destLon = parseFloat(document.getElementById('destLon').value);
-
-        if (!originLat || !originLon || !destLat || !destLon) {
-            alert('Please set both origin and destination locations first');
-            return;
-        }
-
-        const results = document.getElementById('routeResults');
-        results.innerHTML = '<div class="loading"><div class="spinner"></div>Calculating fare...</div>';
-
-        try {
-            const response = await fetch(`${API_BASE}/api/transit/fare/calculate?originLat=${originLat}&originLon=${originLon}&destLat=${destLat}&destLon=${destLon}`);
-            const fare = await response.json();
-
-            results.innerHTML = `
-                <div class="result-card">
-                    <div class="result-title">💰 Fare Information</div>
-                    <div class="result-detail">Amount: ₹${fare.price}</div>
-                    <div class="result-detail">Currency: ${fare.currency}</div>
-                    <div class="result-detail">${fare.description}</div>
-                    <span class="result-badge success">Fare Calculated</span>
-                </div>
-            `;
-
-        } catch (err) {
-            results.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
-        }
-    }
-
-    // Toggle visibility functions
-    function toggleBusesVisibility() {
-        const show = document.getElementById('toggleBuses').checked;
-        Object.values(vehicleMarkers).forEach(marker => {
-            if (show) {
-                map.addLayer(marker);
+            const response = await fetch(`/api/gtfs/stops/${stop.stopId}/schedule`);
+            let content;
+            if (response.status === 204 || !response.ok) {
+                content = `<p class="no-info">No schedule information available for this stop.</p>`;
             } else {
-                map.removeLayer(marker);
+                const schedule = await response.json();
+                const scheduleItems = schedule.map(item =>
+                    `<li><span class="route-name">${item.routeName}</span> <span>${item.arrivalTime}</span></li>`
+                ).join('');
+                content = `<ul>${scheduleItems}</ul>`;
             }
-        });
-    }
-
-    function toggleStopsVisibility() {
-        const show = document.getElementById('toggleStops').checked;
-        Object.values(stopMarkers).forEach(marker => {
-            if (show) {
-                map.addLayer(marker);
-            } else {
-                map.removeLayer(marker);
-            }
-        });
-    }
-
-    function toggleAllStopsVisibility() {
-        const show = document.getElementById('toggleAllStops').checked;
-        Object.values(allStopMarkers).forEach(marker => {
-            if (show) {
-                map.addLayer(marker);
-            } else {
-                map.removeLayer(marker);
-            }
-        });
-        allStopsVisible = show;
-    }
-
-    // [Keep all the existing functions like connectSSE, fetchVehiclesREST, updateVehicles, etc. from your original code]
-    // ... (Include all the existing JavaScript functions from your original code here)
-
-    // Initialize
-    window.onload = initMap;
-</script>
-
-<!-- Include all the remaining original JavaScript functions below -->
-<script>
-    // SSE Connection
-    function connectSSE() {
-        if (eventSource) {
-            eventSource.close();
-        }
-
-        eventSource = new EventSource(`${API_BASE}/vehicles`);
-
-        eventSource.addEventListener('connected', (e) => {
-            console.log('SSE Connected:', e.data);
-        });
-
-        // Listen for vehicle-update events
-        eventSource.addEventListener('vehicle-update', (e) => {
-            try {
-                const vehicles = JSON.parse(e.data);
-                console.log('Received vehicles via SSE:', vehicles.length);
-                updateVehicles(vehicles);
-            } catch (err) {
-                console.error('Error parsing vehicle data:', err);
-            }
-        });
-
-        // Also listen for generic message events (fallback)
-        eventSource.onmessage = (e) => {
-            try {
-                const data = JSON.parse(e.data);
-                if (Array.isArray(data)) {
-                    console.log('Received vehicles via onmessage:', data.length);
-                    updateVehicles(data);
-                }
-            } catch (err) {
-                console.log('Non-JSON message:', e.data);
-            }
-        };
-
-        eventSource.onerror = (err) => {
-            console.error('SSE Error:', err);
-            setTimeout(connectSSE, 5000);
-        };
-    }
-
-    // Fetch vehicles via REST API (fallback)
-    async function fetchVehiclesREST() {
-        try {
-            const response = await fetch(`${API_BASE}/api/vehicles`);
-            const vehicles = await response.json();
-            console.log('Fetched vehicles via REST:', vehicles.length);
-            updateVehicles(vehicles);
-        } catch (err) {
-            console.error('Error fetching vehicles:', err);
+            marker.setPopupContent(`<div class="schedule-popup"><h4>${stop.stopName}</h4>${content}</div>`);
+        } catch (error) {
+            console.error('Error fetching schedule:', error);
+            marker.setPopupContent(`<div class="schedule-popup"><h4>${stop.stopName}</h4><p class="no-info">Could not load schedule.</p></div>`);
         }
     }
 
-    // Update Vehicles on Map
-    function updateVehicles(vehicles) {
-        if (!Array.isArray(vehicles)) {
-            console.error('Invalid vehicles data:', vehicles);
-            return;
-        }
 
-        const currentIds = new Set();
-        let addedCount = 0;
-        let updatedCount = 0;
+    function connectToSse() {
+        if (sseSource) sseSource.close();
+        sseSource = new EventSource('/api/sse/vehicles');
+        sseSource.onmessage = event => updateBusMarkers(JSON.parse(event.data));
+        sseSource.onerror = () => showToast('Live connection failed. Reconnecting...');
+    }
 
+    function updateBusMarkers(vehicles) {
+        const receivedBusIds = new Set();
         vehicles.forEach(vehicle => {
-            // Validate vehicle data
-            if (!vehicle.vehicleId || !vehicle.lat || !vehicle.lon) {
-                console.warn('Invalid vehicle data:', vehicle);
-                return;
-            }
+            const busId = vehicle.id;
+            receivedBusIds.add(busId);
+            const pos = [vehicle.latitude, vehicle.longitude];
+            const popupContent = `<b>Bus ID:</b> ${vehicle.id}<br><b>Route:</b> ${vehicle.routeId || 'N/A'}<br><button onclick="subscribeToBus('${busId}')">Notify Me</button>`;
 
-            currentIds.add(vehicle.vehicleId);
-
-            if (vehicleMarkers[vehicle.vehicleId]) {
-                // Update existing marker
-                vehicleMarkers[vehicle.vehicleId].setLatLng([vehicle.lat, vehicle.lon]);
-                updatedCount++;
+            if (busMarkers[busId]) {
+                busMarkers[busId].setLatLng(pos).setPopupContent(popupContent);
             } else {
-                // Create new marker
-                const marker = L.marker([vehicle.lat, vehicle.lon], {
-                    icon: busIcon
-                }).addTo(map);
-
-                const popupContent = `
-                    <div class="popup-content">
-                        <div class="popup-title">🚌 ${vehicle.routeName || vehicle.routeId || 'Unknown Route'}</div>
-                        <div class="popup-detail"><strong>Vehicle:</strong> ${vehicle.vehicleId}</div>
-                        <div class="popup-detail"><strong>Speed:</strong> ${vehicle.speed ? vehicle.speed.toFixed(1) + ' km/h' : 'N/A'}</div>
-                        <div class="popup-detail"><strong>Occupancy:</strong> ${vehicle.occupancyStatus || 'Unknown'}</div>
-                        ${vehicle.tripHeadsign ? `<div class="popup-detail"><strong>Destination:</strong> ${vehicle.tripHeadsign}</div>` : ''}
-                        <div class="popup-detail" style="font-size: 11px; color: #999; margin-top: 8px;">
-                            Lat: ${vehicle.lat.toFixed(6)}, Lon: ${vehicle.lon.toFixed(6)}
-                        </div>
-                    </div>
-                `;
-                marker.bindPopup(popupContent);
-                vehicleMarkers[vehicle.vehicleId] = marker;
-                addedCount++;
+                busMarkers[busId] = L.marker(pos).bindPopup(popupContent).addTo(map);
             }
         });
 
-        // Remove old markers
-        let removedCount = 0;
-        Object.keys(vehicleMarkers).forEach(id => {
-            if (!currentIds.has(id)) {
-                map.removeLayer(vehicleMarkers[id]);
-                delete vehicleMarkers[id];
-                removedCount++;
+        Object.keys(busMarkers).forEach(busId => {
+            if (!receivedBusIds.has(busId)) {
+                map.removeLayer(busMarkers[busId]);
+                delete busMarkers[busId];
             }
         });
-
-        // Update marker count display
-        document.getElementById('mapMarkers').textContent = Object.keys(vehicleMarkers).length;
-
-        console.log(`Vehicles - Total: ${vehicles.length}, Added: ${addedCount}, Updated: ${updatedCount}, Removed: ${removedCount}, On Map: ${Object.keys(vehicleMarkers).length}`);
     }
 
-    // Update Status
-    async function updateStatus() {
-        try {
-            const response = await fetch(`${API_BASE}/api/status`);
-            const data = await response.json();
-            const apiCount = data.activeVehicleCount || 0;
-            const mapCount = Object.keys(vehicleMarkers).length;
-
-            document.getElementById('vehicleCount').textContent = apiCount;
-            document.getElementById('feedAge').textContent = data.feedAgeSeconds >= 0 ? data.feedAgeSeconds : '--';
-            document.getElementById('mapMarkers').textContent = mapCount;
-
-            // Highlight if there's a big mismatch
-            const countEl = document.getElementById('vehicleCount');
-            const mapEl = document.getElementById('mapMarkers');
-            if (apiCount > 0 && mapCount === 0) {
-                countEl.classList.add('warning');
-                mapEl.classList.add('warning');
-            } else {
-                countEl.classList.remove('warning');
-                mapEl.classList.remove('warning');
-            }
-        } catch (err) {
-            console.error('Error fetching status:', err);
+    // --- User Actions ---
+    async function searchRoute() {
+        const from = $('#from-stop').val();
+        const to = $('#to-stop').val();
+        if (!from || !to) {
+            showToast("Please select both 'From' and 'To' stops.");
+            return;
         }
-    }
 
-    // Get Next Buses
-    async function getNextBuses(stopId) {
-        const results = document.getElementById('nearbyResults');
-        results.innerHTML = '<div class="loading"><div class="spinner"></div>Loading next buses...</div>';
+        if (routePolyline) map.removeLayer(routePolyline);
 
         try {
-            const response = await fetch(`${API_BASE}/api/transit/stops/${stopId}/next-buses?limit=5`);
-            const buses = await response.json();
+            const response = await fetch(`/api/transit/route?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+            if (response.status === 404) {
+                 showToast(`Stops not found. Please check spelling.`);
+                 return;
+            }
+            if (!response.ok) throw new Error('Route search failed on the server.');
 
-            if (buses.length === 0) {
-                results.innerHTML = '<div class="empty-state">No upcoming buses for this stop</div>';
+            const route = await response.json();
+            if (!route || route.length === 0) {
+                showToast(`No direct route found between ${from} and ${to}.`);
                 return;
             }
-
-            results.innerHTML = `
-                <h3 style="margin-bottom: 15px; color: #667eea;">Next Buses at ${stopId}</h3>
-                ${buses.map(bus => `
-                    <div class="result-card">
-                        <div class="result-title">🚌 ${bus.route.routeShortName}</div>
-                        <div class="result-detail">⏰ Arrives: ${bus.stopTime.departureTime}</div>
-                        <div class="result-detail">🎯 Route: ${bus.route.routeLongName}</div>
-                        <span class="result-badge">${bus.stopTime.stopSequence} stop</span>
-                    </div>
-                `).join('')}
-            `;
-        } catch (err) {
-            results.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
+            const latlngs = route.map(stop => [stop.stopLat, stop.stopLon]);
+            routePolyline = L.polyline(latlngs, { color: 'red' }).addTo(map);
+            map.fitBounds(routePolyline.getBounds());
+        } catch (error) {
+            console.error('Error searching for route:', error);
+            showToast('An error occurred while searching for the route.');
         }
     }
 
-    // Show Stop on Map
-    function showStop(stopId, lat, lon) {
-        map.setView([lat, lon], 16);
-        if (stopMarkers[stopId]) {
-            stopMarkers[stopId].openPopup();
-        } else if (allStopMarkers[stopId]) {
-            allStopMarkers[stopId].openPopup();
+    async function searchBus() {
+        const query = $('#bus-search').val();
+        if (!query) {
+            showToast('Please select a bus number to search.');
+            return;
         }
-    }
-
-    // Locate User
-    function locateUser() {
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                (position) => {
-                    const lat = position.coords.latitude;
-                    const lon = position.coords.longitude;
-                    map.setView([lat, lon], 14);
-                },
-                (error) => {
-                    alert('Unable to get your location: ' + error.message);
-                }
-            );
-        } else {
-            alert('Geolocation is not supported by your browser');
-        }
-    }
-
-    // Toggle Sidebar
-    function toggleSidebar() {
-        document.getElementById('sidebar').classList.toggle('collapsed');
-    }
-
-    // Tab Switching
-    document.querySelectorAll('.tab').forEach(tab => {
-        tab.addEventListener('click', () => {
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-
-            tab.classList.add('active');
-            document.getElementById(tab.dataset.tab + '-panel').classList.add('active');
+        // Since we have all routes, we can just highlight live buses on that route
+        let foundBuses = false;
+        Object.values(busMarkers).forEach(marker => {
+            const popupText = marker.getPopup().getContent();
+            if(popupText.includes(`<b>Route:</b> ${query}`)){
+                 marker.openPopup();
+                 map.setView(marker.getLatLng(), 14);
+                 foundBuses = true;
+            }
         });
-    });
+
+        if(!foundBuses) {
+             showToast(`No live buses found for route ${query} at the moment.`);
+        }
+    }
+
+    async function subscribeToBus(vehicleId) {
+        try {
+            const response = await fetch('/api/transit/notifications/subscribe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ vehicleId: vehicleId })
+            });
+            if (!response.ok) throw new Error('Subscription failed');
+            showToast(`Subscribed to notifications for bus ${vehicleId}`);
+        } catch (error) {
+            console.error('Subscription error:', error);
+            showToast(`Failed to subscribe to bus ${vehicleId}`);
+        }
+    }
+
+    // --- Initial Load ---
+    initialLoad();
+
 </script>
 </body>
 </html>
+

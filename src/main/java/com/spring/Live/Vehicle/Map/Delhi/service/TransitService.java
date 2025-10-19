@@ -1,15 +1,12 @@
 package com.spring.Live.Vehicle.Map.Delhi.service;
 
-import com.spring.Live.Vehicle.Map.Delhi.model.*;
-import com.spring.Live.Vehicle.Map.Delhi.model.Calendar;
-import com.spring.Live.Vehicle.Map.Delhi.repository.*;
+import com.spring.Live.Vehicle.Map.Delhi.model.Stop;
+import com.spring.Live.Vehicle.Map.Delhi.model.StopTime;
+import com.spring.Live.Vehicle.Map.Delhi.repository.StopRepository;
+import com.spring.Live.Vehicle.Map.Delhi.repository.StopTimeRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.time.DayOfWeek;
-import java.time.LocalDate;
-import java.time.LocalTime;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -17,473 +14,66 @@ import java.util.stream.Collectors;
 public class TransitService {
 
     @Autowired
-    private StopRepository stopRepository;
-
-    @Autowired
-    private RouteRepository routeRepository;
-
-    @Autowired
-    private TripRepository tripRepository;
-
-    @Autowired
     private StopTimeRepository stopTimeRepository;
 
     @Autowired
-    private CalendarRepository calendarRepository;
+    private StopRepository stopRepository;
 
-    @Autowired
-    private FareRuleRepository fareRuleRepository;
+    public List<Stop> findRoute(Stop from, Stop to) {
+        // Find all stop times (which correspond to trips) for the starting and ending stops.
+        List<StopTime> fromStopTimes = stopTimeRepository.findByStopId(from.getStopId());
+        List<StopTime> toStopTimes = stopTimeRepository.findByStopId(to.getStopId());
 
-    @Autowired
-    private FareAttributeRepository fareAttributeRepository;
+        // Extract the trip IDs for each set of stop times.
+        Set<String> fromTripIds = fromStopTimes.stream().map(StopTime::getTripId).collect(Collectors.toSet());
+        Set<String> toTripIds = toStopTimes.stream().map(StopTime::getTripId).collect(Collectors.toSet());
 
-    // ===============================
-    // FEATURE 1: FIND NEAREST STOPS
-    // ===============================
-    public List<NearbyStopDTO> findNearestStops(double userLat, double userLon, int limitKm) {
-        List<Stop> allStops = stopRepository.findAll();
+        // Find the intersection of the two sets to get trips that visit both stops.
+        fromTripIds.retainAll(toTripIds);
 
-        return allStops.stream()
-                .map(stop -> {
-                    double distance = calculateDistance(userLat, userLon,
-                            stop.getStopLat(), stop.getStopLon());
-                    return new NearbyStopDTO(stop, distance);
-                })
-                .filter(dto -> dto.getDistance() <= limitKm)
-                .sorted(Comparator.comparingDouble(NearbyStopDTO::getDistance))
-                .limit(10)
-                .collect(Collectors.toList());
-    }
-
-    // ===============================
-    // FEATURE 2: ROUTE PLANNING (A to B)
-    // ===============================
-    public List<RouteOption> findRoutes(String originStopId, String destStopId) {
-        List<RouteOption> options = new ArrayList<>();
-
-        // Find direct routes
-        List<RouteOption> directRoutes = findDirectRoutes(originStopId, destStopId);
-        options.addAll(directRoutes);
-
-        // Find routes with one transfer (if direct routes < 3)
-        if (directRoutes.size() < 3) {
-            List<RouteOption> transferRoutes = findRoutesWithTransfer(originStopId, destStopId);
-            options.addAll(transferRoutes);
-        }
-
-        return options.stream()
-                .sorted(Comparator.comparingInt(RouteOption::getTotalStops))
-                .limit(5)
-                .collect(Collectors.toList());
-    }
-
-    private List<RouteOption> findDirectRoutes(String originStopId, String destStopId) {
-        List<RouteOption> routes = new ArrayList<>();
-
-        // Get all trips that stop at origin
-        List<StopTime> originStops = stopTimeRepository.findByStopId(originStopId);
-
-        for (StopTime originStop : originStops) {
-            String tripId = originStop.getTripId();
-
-            // Check if same trip stops at destination
-            List<StopTime> destStops = stopTimeRepository
-                    .findByTripIdAndStopId(tripId, destStopId);
-
-            for (StopTime destStop : destStops) {
-                // Ensure destination comes after origin
-                if (destStop.getStopSequence() > originStop.getStopSequence()) {
-                    Trip trip = tripRepository.findById(tripId).orElse(null);
-                    if (trip != null && isServiceActiveToday(trip.getServiceId())) {
-                        Route route = routeRepository.findById(trip.getRouteId()).orElse(null);
-                        if (route != null) {
-                            routes.add(new RouteOption(
-                                    route,
-                                    originStop,
-                                    destStop,
-                                    destStop.getStopSequence() - originStop.getStopSequence()
-                            ));
-                        }
-                    }
-                }
-            }
-        }
-
-        return routes;
-    }
-
-    private List<RouteOption> findRoutesWithTransfer(String originStopId, String destStopId) {
-        List<RouteOption> routes = new ArrayList<>();
-
-        // Find common transfer points
-        Set<String> originReachableStops = getReachableStops(originStopId);
-        Set<String> destReachableStops = getReachableStops(destStopId);
-
-        // Find intersection (potential transfer points)
-        originReachableStops.retainAll(destReachableStops);
-
-        // Build routes through transfer points (limit to 3)
-        int count = 0;
-        for (String transferStopId : originReachableStops) {
-            if (count >= 3) break;
-
-            List<RouteOption> leg1 = findDirectRoutes(originStopId, transferStopId);
-            List<RouteOption> leg2 = findDirectRoutes(transferStopId, destStopId);
-
-            if (!leg1.isEmpty() && !leg2.isEmpty()) {
-                // Create combined route (simplified)
-                routes.add(leg1.get(0)); // Just add first leg for now
-                count++;
-            }
-        }
-
-        return routes;
-    }
-
-    private Set<String> getReachableStops(String stopId) {
-        Set<String> reachable = new HashSet<>();
-        List<StopTime> stopTimes = stopTimeRepository.findByStopId(stopId);
-
-        for (StopTime st : stopTimes) {
-            List<StopTime> tripStops = stopTimeRepository.findByTripIdOrderByStopSequence(st.getTripId());
-            tripStops.forEach(ts -> reachable.add(ts.getStopId()));
-        }
-
-        return reachable;
-    }
-
-    // ===============================
-    // FEATURE 3: NEXT BUS ARRIVALS
-    // ===============================
-    public List<NextBusDTO> getNextBuses(String stopId, int limit) {
-        LocalTime now = LocalTime.now();
-        List<StopTime> stopTimes = stopTimeRepository.findByStopId(stopId);
-
-        return stopTimes.stream()
-                .filter(st -> {
-                    Trip trip = tripRepository.findById(st.getTripId()).orElse(null);
-                    return trip != null && isServiceActiveToday(trip.getServiceId());
-                })
-                .filter(st -> isTimeAfter(st.getDepartureTime(), now))
-                .sorted(Comparator.comparing(StopTime::getDepartureTime))
-                .limit(limit)
-                .map(st -> {
-                    Trip trip = tripRepository.findById(st.getTripId()).orElse(null);
-                    Route route = trip != null ?
-                            routeRepository.findById(trip.getRouteId()).orElse(null) : null;
-                    return new NextBusDTO(route, st);
-                })
-                .collect(Collectors.toList());
-    }
-
-    // ===============================
-    // FEATURE 4: FARE CALCULATION
-    // ===============================
-    public FareInfo calculateFare(String originStopId, String destStopId, String routeId) {
-        Stop origin = stopRepository.findById(originStopId).orElse(null);
-        Stop dest = stopRepository.findById(destStopId).orElse(null);
-
-        if (origin == null || dest == null) {
-            return new FareInfo(0, "INR", "Stops not found");
-        }
-
-        // Find fare rules for this route
-        List<FareRule> fareRules = fareRuleRepository.findByRouteId(routeId);
-
-        for (FareRule rule : fareRules) {
-            // Check zone-based or origin-destination based fare
-            if (matchesFareRule(rule, origin, dest)) {
-                FareAttribute fareAttr = fareAttributeRepository
-                        .findById(rule.getFareId()).orElse(null);
-                if (fareAttr != null) {
-                    return new FareInfo(
-                            fareAttr.getPrice(),
-                            fareAttr.getCurrencyType(),
-                            "Standard fare"
-                    );
-                }
-            }
-        }
-
-        // Default fare if no specific rule found
-        return new FareInfo(10.0f, "INR", "Default fare");
-    }
-
-    private boolean matchesFareRule(FareRule rule, Stop origin, Stop dest) {
-        // Check if origin/destination zones match
-        if (rule.getOriginId() != null && rule.getDestinationId() != null) {
-            return rule.getOriginId().equals(origin.getZoneId()) &&
-                    rule.getDestinationId().equals(dest.getZoneId());
-        }
-        return true; // Match all if no specific zones
-    }
-
-    // ===============================
-    // FEATURE 5: ROUTE DETAILS
-    // ===============================
-    public RouteDetails getRouteDetails(String routeId) {
-        Route route = routeRepository.findById(routeId).orElse(null);
-        if (route == null) return null;
-
-        // Get all trips for this route
-        List<Trip> trips = tripRepository.findByRouteId(routeId);
-        if (trips.isEmpty()) return null;
-
-        // Get stops for first active trip
-        Trip activeTrip = trips.stream()
-                .filter(t -> isServiceActiveToday(t.getServiceId()))
-                .findFirst()
-                .orElse(trips.get(0));
-
-        List<StopTime> stopTimes = stopTimeRepository
-                .findByTripIdOrderByStopSequence(activeTrip.getTripId());
-
-        List<Stop> stops = stopTimes.stream()
-                .map(st -> stopRepository.findById(st.getStopId()).orElse(null))
-                .filter(Objects::nonNull)
-                .collect(Collectors.toList());
-
-        return new RouteDetails(route, stops, stopTimes);
-    }
-
-    // ===============================
-    // FEATURE 6: SEARCH FUNCTIONALITY
-    // ===============================
-    public List<Stop> searchStops(String query) {
-        return stopRepository.searchByNameOrCode(query);
-    }
-
-    public List<Route> searchRoutes(String query) {
-        return routeRepository.searchByName(query);
-    }
-
-    // ===============================
-    // UTILITY METHODS
-    // ===============================
-    private boolean isServiceActiveToday(String serviceId) {
-        Calendar calendar = calendarRepository.findById(serviceId).orElse(null);
-        if (calendar == null) return false;
-
-        DayOfWeek today = LocalDate.now().getDayOfWeek();
-
-        switch (today) {
-            case MONDAY: return calendar.isMonday();
-            case TUESDAY: return calendar.isTuesday();
-            case WEDNESDAY: return calendar.isWednesday();
-            case THURSDAY: return calendar.isThursday();
-            case FRIDAY: return calendar.isFriday();
-            case SATURDAY: return calendar.isSaturday();
-            case SUNDAY: return calendar.isSunday();
-            default: return false;
-        }
-    }
-
-    private boolean isTimeAfter(String gtfsTime, LocalTime currentTime) {
-        try {
-            String[] parts = gtfsTime.split(":");
-            int hours = Integer.parseInt(parts[0]);
-            int minutes = Integer.parseInt(parts[1]);
-
-            // Handle times past midnight (25:00:00, etc.)
-            if (hours >= 24) {
-                hours = hours - 24;
-            }
-
-            LocalTime scheduleTime = LocalTime.of(hours, minutes);
-            return scheduleTime.isAfter(currentTime);
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    private double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
-        // Haversine formula
-        final int R = 6371; // Earth radius in km
-
-        double latDistance = Math.toRadians(lat2 - lat1);
-        double lonDistance = Math.toRadians(lon2 - lon1);
-
-        double a = Math.sin(latDistance / 2) * Math.sin(latDistance / 2)
-                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
-                * Math.sin(lonDistance / 2) * Math.sin(lonDistance / 2);
-
-        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-        return R * c;
-    }
-
-    // ===============================
-    // DTO CLASSES
-    // ===============================
-    public static class NearbyStopDTO {
-        private Stop stop;
-        private double distance;
-
-        public NearbyStopDTO(Stop stop, double distance) {
-            this.stop = stop;
-            this.distance = distance;
-        }
-
-        public Stop getStop() { return stop; }
-        public double getDistance() { return distance; }
-    }
-
-    public static class RouteOption {
-        private Route route;
-        private StopTime originStopTime;
-        private StopTime destStopTime;
-        private int totalStops;
-
-        public RouteOption(Route route, StopTime originStopTime,
-                           StopTime destStopTime, int totalStops) {
-            this.route = route;
-            this.originStopTime = originStopTime;
-            this.destStopTime = destStopTime;
-            this.totalStops = totalStops;
-        }
-
-        public Route getRoute() { return route; }
-        public StopTime getOriginStopTime() { return originStopTime; }
-        public StopTime getDestStopTime() { return destStopTime; }
-        public int getTotalStops() { return totalStops; }
-    }
-
-    public static class NextBusDTO {
-        private Route route;
-        private StopTime stopTime;
-
-        public NextBusDTO(Route route, StopTime stopTime) {
-            this.route = route;
-            this.stopTime = stopTime;
-        }
-
-        public Route getRoute() { return route; }
-        public StopTime getStopTime() { return stopTime; }
-    }
-
-    public static class FareInfo {
-        private float price;
-        private String currency;
-        private String description;
-
-        public FareInfo(float price, String currency, String description) {
-            this.price = price;
-            this.currency = currency;
-            this.description = description;
-        }
-
-        public float getPrice() { return price; }
-        public String getCurrency() { return currency; }
-        public String getDescription() { return description; }
-    }
-
-    public static class RouteDetails {
-        private Route route;
-        private List<Stop> stops;
-        private List<StopTime> stopTimes;
-
-        public RouteDetails(Route route, List<Stop> stops, List<StopTime> stopTimes) {
-            this.route = route;
-            this.stops = stops;
-            this.stopTimes = stopTimes;
-        }
-
-        public Route getRoute() { return route; }
-        public List<Stop> getStops() { return stops; }
-        public List<StopTime> getStopTimes() { return stopTimes; }
-    }
-
-    // ===============================
-// PIN-BASED LOCATION METHODS
-// ===============================
-
-    /**
-     * Find the nearest stop to a given location
-     */
-    public Stop findNearestStop(double lat, double lon) {
-        List<Stop> allStops = stopRepository.findAll();
-
-        return allStops.stream()
-                .min(Comparator.comparingDouble(stop ->
-                        calculateDistance(lat, lon, stop.getStopLat(), stop.getStopLon())))
-                .orElse(null);
-    }
-
-    /**
-     * Find routes between two pin locations
-     */
-    public List<RouteOption> findRoutesByLocation(double originLat, double originLon,
-                                                  double destLat, double destLon) {
-
-        // Find nearest stops to both locations
-        Stop originStop = findNearestStop(originLat, originLon);
-        Stop destStop = findNearestStop(destLat, destLon);
-
-        if (originStop == null || destStop == null) {
+        if (fromTripIds.isEmpty()) {
+            // No direct route found.
             return Collections.emptyList();
         }
 
-        // Use existing route finding logic with the discovered stop IDs
-        return findRoutes(originStop.getStopId(), destStop.getStopId());
-    }
+        // Pick the first common trip ID to build the route.
+        String commonTripId = fromTripIds.iterator().next();
 
-    /**
-     * Calculate fare between two pin locations
-     */
-    public FareInfo calculateFareByLocation(double originLat, double originLon,
-                                            double destLat, double destLon) {
+        // Get all stop times for this common trip, ordered by sequence.
+        List<StopTime> tripStopTimes = stopTimeRepository.findByTripIdOrderByStopSequence(commonTripId);
 
-        Stop originStop = findNearestStop(originLat, originLon);
-        Stop destStop = findNearestStop(destLat, destLon);
+        // Find the sequence numbers for our start and end stops within this trip.
+        int fromSequence = -1;
+        int toSequence = -1;
 
-        if (originStop == null || destStop == null) {
-            return new FareInfo(0, "INR", "No stops found near the specified locations");
+        for (StopTime st : tripStopTimes) {
+            if (st.getStopId().equals(from.getStopId())) {
+                fromSequence = st.getStopSequence();
+            }
+            if (st.getStopId().equals(to.getStopId())) {
+                toSequence = st.getStopSequence();
+            }
         }
 
-        // Find possible routes and use the first one for fare calculation
-        List<RouteOption> routes = findRoutes(originStop.getStopId(), destStop.getStopId());
-
-        if (routes.isEmpty()) {
-            return new FareInfo(0, "INR", "No routes found between the specified locations");
+        // Ensure the "from" stop comes before the "to" stop in the sequence.
+        if (fromSequence == -1 || toSequence == -1 || fromSequence >= toSequence) {
+            return Collections.emptyList();
         }
 
-        String routeId = routes.get(0).getRoute().getRouteId();
-        return calculateFare(originStop.getStopId(), destStop.getStopId(), routeId);
-    }
+        // Filter the stops to get only those between our start and end points.
+        List<String> routeStopIds = new ArrayList<>();
+        for (StopTime st : tripStopTimes) {
+            if (st.getStopSequence() >= fromSequence && st.getStopSequence() <= toSequence) {
+                routeStopIds.add(st.getStopId());
+            }
+        }
 
-    /**
-     * Get next buses near a pin location
-     */
-    public List<NextBusDTO> getNextBusesNearLocation(double lat, double lon,
-                                                     double radius, int limit) {
+        // Fetch the full Stop objects for the route.
+        List<Stop> stopsOnRoute = stopRepository.findAllById(routeStopIds);
 
-        // Find nearby stops
-        List<NearbyStopDTO> nearbyStops = findNearestStops(lat, lon, radius);
+        // Sort the final list of stops according to the trip sequence.
+        stopsOnRoute.sort(Comparator.comparingInt(stop -> routeStopIds.indexOf(stop.getStopId())));
 
-        // Get next buses for each nearby stop
-        return nearbyStops.stream()
-                .flatMap(nearbyStop ->
-                        getNextBuses(nearbyStop.getStop().getStopId(), limit).stream())
-                .sorted(Comparator.comparing(dto -> dto.getStopTime().getDepartureTime()))
-                .limit(limit)
-                .collect(Collectors.toList());
-    }
-
-    /**
-     * Enhanced nearby stops with better filtering
-     */
-    public List<NearbyStopDTO> findNearestStops(double userLat, double userLon, double radiusKm) {
-        List<Stop> allStops = stopRepository.findAll();
-
-        return allStops.stream()
-                .map(stop -> {
-                    double distance = calculateDistance(userLat, userLon,
-                            stop.getStopLat(), stop.getStopLon());
-                    return new NearbyStopDTO(stop, distance);
-                })
-                .filter(dto -> dto.getDistance() <= radiusKm)
-                .sorted(Comparator.comparingDouble(NearbyStopDTO::getDistance))
-                .limit(15) // Increased limit for better coverage
-                .collect(Collectors.toList());
+        return stopsOnRoute;
     }
 }

@@ -10,9 +10,6 @@ import java.util.List;
 @Repository
 public interface RouteRepository extends JpaRepository<Route, String> {
 
-    List<Route> findByAgencyId(String agencyId);
+    List<Route> findByRouteShortNameContainingOrRouteLongNameContaining(String shortName, String longName);
 
-    @Query("SELECT r FROM Route r WHERE " +
-            "r.routeShortName LIKE %?1% OR r.routeLongName LIKE %?1%")
-    List<Route> searchByName(String keyword);
 }
