@@ -1,92 +1,77 @@
 package com.spring.Live.Vehicle.Map.Delhi.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.transit.realtime.GtfsRealtime;
-import io.micrometer.core.instrument.Counter;
-import io.micrometer.core.instrument.MeterRegistry;
+import com.spring.Live.Vehicle.Map.Delhi.model.Vehicle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.io.IOException;
-import java.net.URL;
-import java.util.HashMap;
+import java.io.InputStream;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
 public class LiveVehicleService {
 
-    private static final Logger logger = LoggerFactory.getLogger(LiveVehicleService.class);
+    private static final Logger log = LoggerFactory.getLogger(LiveVehicleService.class);
 
-    @Value("${otd.realtime.url}")
-    private String otdRealtimeUrl;
+    private final WebClient webClient;
+    private final VehicleStoreService vehicleStoreService;
+    private final NotificationService notificationService;
 
-    @Autowired
-    private WebClient webClient;
+    @Value("${gtfs.realtime.url}")
+    private String gtfsRealtimeUrl;
 
-    @Autowired
-    private VehicleStoreService vehicleStoreService;
-
-    @Autowired
-    private NotificationService notificationService;
-
-    private final Counter fetchSuccessCounter;
-    private final Counter fetchFailureCounter;
-
-    public LiveVehicleService(VehicleStoreService vehicleStoreService, MeterRegistry meterRegistry) {
-        this.fetchSuccessCounter = Counter.builder("gtfs.fetch.success")
-                .description("Counts successful GTFS-RT feed fetches")
-                .register(meterRegistry);
-        this.fetchFailureCounter = Counter.builder("gtfs.fetch.failure")
-                .description("Counts failed GTFS-RT feed fetches")
-                .register(meterRegistry);
-
-        // This gauge will report the current number of active vehicles
-        meterRegistry.gauge("gtfs.vehicles.active", vehicleStoreService, VehicleStoreService::getActiveVehicleCount);
+    public LiveVehicleService(WebClient webClient, VehicleStoreService vehicleStoreService, NotificationService notificationService) {
+        this.webClient = webClient;
+        this.vehicleStoreService = vehicleStoreService;
+        this.notificationService = notificationService;
     }
 
-
-    @Scheduled(fixedRate = 10000) // 10 seconds
-    public void fetchAndProcessVehicleData() {
+    @Scheduled(fixedRateString = "${app.scheduling.vehicle-fetch-rate}")
+    public void fetchAndProcessLiveVehicleData() {
+        log.info("Fetching live vehicle data from: {}", gtfsRealtimeUrl);
         try {
-            logger.info("Fetching live vehicle data...");
-            GtfsRealtime.FeedMessage feed = GtfsRealtime.FeedMessage.parseFrom(new URL(otdRealtimeUrl).openStream());
+            byte[] feedBytes = webClient.get()
+                    .uri(gtfsRealtimeUrl)
+                    .retrieve()
+                    .bodyToMono(byte[].class)
+                    .block();
 
-            int updatedCount = vehicleStoreService.updateVehicles(feed);
-            logger.info("Successfully processed and updated {} vehicles.", updatedCount);
+            if (feedBytes == null || feedBytes.length == 0) {
+                log.warn("GTFS-RT feed is empty or null.");
+                return;
+            }
 
-            // Notify SSE clients with the latest vehicle data
-            List<Map<String, Object>> vehicleList = vehicleStoreService.getAllVehicles().values().stream()
-                    .map(v -> {
-                        // Using HashMap to ensure the value type is Object, resolving the type conflict.
-                        Map<String, Object> map = new HashMap<>();
-                        map.put("id", v.getVehicleId());
-                        map.put("latitude", v.getLat());
-                        map.put("longitude", v.getLon());
-                        map.put("routeId", v.getRouteId() != null ? v.getRouteId() : "");
-                        return map;
+            GtfsRealtime.FeedMessage feedMessage = GtfsRealtime.FeedMessage.parseFrom(feedBytes);
+            List<Vehicle> currentVehicles = feedMessage.getEntityList().stream()
+                    .filter(GtfsRealtime.FeedEntity::hasVehicle)
+                    .map(entity -> {
+                        GtfsRealtime.VehiclePosition vehiclePosition = entity.getVehicle();
+                        Vehicle vehicle = new Vehicle();
+                        vehicle.setId(entity.getId());
+                        vehicle.setTripId(vehiclePosition.getTrip().getTripId());
+                        vehicle.setRouteId(vehiclePosition.getTrip().getRouteId());
+                        vehicle.setLatitude(vehiclePosition.getPosition().getLatitude());
+                        vehicle.setLongitude(vehiclePosition.getPosition().getLongitude());
+                        vehicle.setBearing(vehiclePosition.getPosition().getBearing());
+                        vehicle.setSpeed(vehiclePosition.getPosition().getSpeed());
+                        vehicle.setTimestamp(vehiclePosition.getTimestamp());
+                        vehicle.setVehicleId(vehiclePosition.getVehicle().getId());
+                        return vehicle;
                     })
                     .collect(Collectors.toList());
 
-            try {
-                notificationService.sendNotification(new ObjectMapper().writeValueAsString(vehicleList));
-            } catch (JsonProcessingException e) {
-                logger.error("Failed to serialize vehicle data for SSE notification", e);
-            }
+            log.info("Fetched {} live vehicle positions.", currentVehicles.size());
+            vehicleStoreService.updateVehicles(currentVehicles);
+            notificationService.notifyVehicleUpdates(currentVehicles);
 
-            fetchSuccessCounter.increment();
-
-        } catch (IOException e) {
-            logger.error("Error fetching or parsing GTFS-RT data", e);
-            fetchFailureCounter.increment();
+        } catch (Exception e) {
+            log.error("Error fetching or processing GTFS-RT feed", e);
         }
     }
 }
-

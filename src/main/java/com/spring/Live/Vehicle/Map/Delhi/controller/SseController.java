@@ -1,24 +1,24 @@
 package com.spring.Live.Vehicle.Map.Delhi.controller;
 
 import com.spring.Live.Vehicle.Map.Delhi.service.NotificationService;
-import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
-import reactor.core.publisher.Flux;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @RestController
 public class SseController {
 
-    @Autowired
-    private NotificationService notificationService;
+    private final NotificationService notificationService;
 
-    // Corrected path to match the frontend EventSource URL
-    @GetMapping(path = "/api/sse/vehicles", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<String> streamNotifications(HttpServletRequest request) {
-        // Use HTTP session ID to manage individual client streams
-        String sessionId = request.getSession().getId();
-        return notificationService.getNotificationStream(sessionId);
+    public SseController(NotificationService notificationService) {
+        this.notificationService = notificationService;
+    }
+
+    @GetMapping(path = "/sse/vehicles", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamVehicleUpdates() {
+        SseEmitter emitter = new SseEmitter(Long.MAX_VALUE);
+        notificationService.addEmitter(emitter);
+        return emitter;
     }
 }

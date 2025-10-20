@@ -1,221 +1,211 @@
 package com.spring.Live.Vehicle.Map.Delhi.model;
 
 import com.opencsv.CSVReader;
-import com.opencsv.exceptions.CsvValidationException;
+import com.opencsv.exceptions.CsvException;
 import com.spring.Live.Vehicle.Map.Delhi.repository.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.io.ClassPathResource;
-import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.util.ArrayList;
+import java.io.Reader;
 import java.util.List;
-import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Component
 public class DataLoader implements CommandLineRunner {
 
-    private static final Logger logger = LoggerFactory.getLogger(DataLoader.class);
-    private static final int BATCH_SIZE = 500; // Define a batch size
+    private static final Logger log = LoggerFactory.getLogger(DataLoader.class);
 
-    @Autowired private AgencyRepository agencyRepository;
-    @Autowired private RouteRepository routeRepository;
-    @Autowired private StopRepository stopRepository;
-    @Autowired private TripRepository tripRepository;
-    @Autowired private StopTimeRepository stopTimeRepository;
-    @Autowired private CalendarRepository calendarRepository;
-    @Autowired private FareAttributeRepository fareAttributeRepository;
-    @Autowired private FareRuleRepository fareRuleRepository;
+    private final AgencyRepository agencyRepository;
+    private final CalendarRepository calendarRepository;
+    private final FareAttributeRepository fareAttributeRepository;
+    private final FareRuleRepository fareRuleRepository;
+    private final RouteRepository routeRepository;
+    private final StopRepository stopRepository;
+    private final StopTimeRepository stopTimeRepository;
+    private final TripRepository tripRepository;
+
+    public DataLoader(AgencyRepository agencyRepository, CalendarRepository calendarRepository,
+                      FareAttributeRepository fareAttributeRepository, FareRuleRepository fareRuleRepository,
+                      RouteRepository routeRepository, StopRepository stopRepository,
+                      StopTimeRepository stopTimeRepository, TripRepository tripRepository) {
+        this.agencyRepository = agencyRepository;
+        this.calendarRepository = calendarRepository;
+        this.fareAttributeRepository = fareAttributeRepository;
+        this.fareRuleRepository = fareRuleRepository;
+        this.routeRepository = routeRepository;
+        this.stopRepository = stopRepository;
+        this.stopTimeRepository = stopTimeRepository;
+        this.tripRepository = tripRepository;
+    }
 
     @Override
     @Transactional
     public void run(String... args) throws Exception {
         if (agencyRepository.count() > 0) {
-            logger.info("GTFS data is already present. Skipping data loading.");
+            log.info("GTFS static data already loaded. Skipping data loading process.");
             return;
         }
 
-        logger.info("Starting GTFS data loading process...");
+        log.info("Starting GTFS static data load process...");
 
-        // Load single, smaller files directly
-        loadCsvData("static/agency.csv", agencyRepository, this::parseAgency);
-        loadCsvData("static/calendar.csv", calendarRepository, this::parseCalendar);
+        loadAgencies();
+        loadCalendars();
+        loadFareAttributes();
+        loadFareRules();
+        loadRoutes();
+        loadStops();
+        loadStopTimes();
+        loadTrips();
 
-        // Load larger files in batches
-        loadCsvData("static/routes.csv", routeRepository, this::parseRoute);
-        loadCsvData("static/stops.csv", stopRepository, this::parseStop);
-        loadCsvData("static/trips.csv", tripRepository, this::parseTrip);
-
-        // Load partitioned files
-        String[] stopTimeFiles = {"aa", "ab", "ac", "ad", "ae", "af", "ag", "ah"};
-        for (String suffix : stopTimeFiles) {
-            loadCsvData("static/stop_times_part_" + suffix + ".csv", stopTimeRepository, this::parseStopTime);
-        }
-
-        String[] fareAttrFiles = {"aa", "ab", "ac", "ad", "ae"};
-        for (String suffix : fareAttrFiles) {
-            loadCsvData("static/fare_attributes_part_" + suffix + ".csv", fareAttributeRepository, this::parseFareAttribute);
-        }
-
-        String[] fareRuleFiles = {"aa", "ab", "ac", "ad", "ae"};
-        for (String suffix : fareRuleFiles) {
-            loadCsvData("static/fare_rules_part_" + suffix + ".csv", fareRuleRepository, this::parseFareRule);
-        }
-
-        logger.info("GTFS data loading complete.");
+        log.info("GTFS static data loading complete.");
     }
 
-    private <T> void loadCsvData(String resourcePath, JpaRepository<T, ?> repository, Function<String[], T> parser) {
-        logger.info("Loading data from {}...", resourcePath);
-        List<T> batchList = new ArrayList<>();
-        try (CSVReader reader = new CSVReader(new InputStreamReader(new ClassPathResource(resourcePath).getInputStream()))) {
-            reader.readNext(); // Skip header row
-            String[] line;
-            while ((line = reader.readNext()) != null) {
-                T entity = parser.apply(line);
-                if (entity != null) {
-                    batchList.add(entity);
-                }
-                if (batchList.size() >= BATCH_SIZE) {
-                    repository.saveAll(batchList);
-                    batchList.clear();
-                }
-            }
-            if (!batchList.isEmpty()) {
-                repository.saveAll(batchList);
-            }
-        } catch (IOException | CsvValidationException e) {
-            logger.error("Failed to load data from " + resourcePath, e);
+    // Helper method to read CSV data
+    private List<String[]> readCsvData(String filePath) throws IOException, CsvException {
+        try (Reader reader = new InputStreamReader(new ClassPathResource(filePath).getInputStream());
+             CSVReader csvReader = new CSVReader(reader)) {
+            csvReader.skip(1); // Skip header row
+            return csvReader.readAll();
         }
-        logger.info("Finished loading data from {}.", resourcePath);
     }
 
-    // --- CSV Parser Methods ---
-
-    private Agency parseAgency(String[] line) {
-        try {
+    private void loadAgencies() throws IOException, CsvException {
+        log.info("Loading agencies...");
+        List<Agency> agencies = readCsvData("static/agency.csv").stream().map(row -> {
             Agency agency = new Agency();
-            agency.setAgencyId(line[0]);
-            agency.setAgencyName(line[1]);
-            agency.setAgencyUrl(line[2]);
-            agency.setAgencyTimezone(line[3]);
-            agency.setAgencyLang(line[4]);
+            agency.setAgencyId(row[0]);
+            agency.setAgencyName(row[1]);
+            agency.setAgencyUrl(row[2]);
+            agency.setAgencyTimezone(row[3]);
+            agency.setAgencyLang(row[4]);
             return agency;
-        } catch (Exception e) {
-            logger.warn("Skipping malformed agency row: {}", String.join(",", line));
-            return null;
-        }
+        }).collect(Collectors.toList());
+        agencyRepository.saveAll(agencies);
+        log.info("Loaded {} agencies.", agencies.size());
     }
 
-    private Route parseRoute(String[] line) {
-        try {
-            Route route = new Route();
-            route.setRouteId(line[0]);
-            route.setAgencyId(line[1]);
-            route.setRouteShortName(line[2]);
-            route.setRouteLongName(line[3]);
-            route.setRouteType(Integer.parseInt(line[4]));
-            return route;
-        } catch (Exception e) {
-            logger.warn("Skipping malformed route row: {}", String.join(",", line));
-            return null;
-        }
-    }
-
-    private Stop parseStop(String[] line) {
-        try {
-            Stop stop = new Stop();
-            stop.setStopId(line[0]);
-            stop.setStopCode(line[1]);
-            stop.setStopName(line[2]);
-            stop.setStopLat(Double.parseDouble(line[3]));
-            stop.setStopLon(Double.parseDouble(line[4]));
-            return stop;
-        } catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
-            logger.warn("Skipping malformed stop row: {} - Error: {}", String.join(",", line), e.getMessage());
-            return null;
-        }
-    }
-
-    private Trip parseTrip(String[] line) {
-        try {
-            Trip trip = new Trip();
-            trip.setRouteId(line[0]);
-            trip.setServiceId(line[1]);
-            trip.setTripId(line[2]);
-            trip.setShapeId(line[5]);
-            return trip;
-        } catch (Exception e) {
-            logger.warn("Skipping malformed trip row: {}", String.join(",", line));
-            return null;
-        }
-    }
-
-    private StopTime parseStopTime(String[] line) {
-        try {
-            StopTime stopTime = new StopTime();
-            stopTime.setTripId(line[0]);
-            stopTime.setArrivalTime(line[1]);
-            stopTime.setDepartureTime(line[2]);
-            stopTime.setStopId(line[3]);
-            stopTime.setStopSequence(Integer.parseInt(line[4]));
-            return stopTime;
-        } catch (Exception e) {
-            logger.warn("Skipping malformed stop_time row: {}", String.join(",", line));
-            return null;
-        }
-    }
-
-    private Calendar parseCalendar(String[] line) {
-        try {
+    private void loadCalendars() throws IOException, CsvException {
+        log.info("Loading calendars...");
+        List<Calendar> calendars = readCsvData("static/calendar.csv").stream().map(row -> {
             Calendar calendar = new Calendar();
-            calendar.setServiceId(line[0]);
-            calendar.setMonday(Integer.parseInt(line[1]));
-            calendar.setTuesday(Integer.parseInt(line[2]));
-            calendar.setWednesday(Integer.parseInt(line[3]));
-            calendar.setThursday(Integer.parseInt(line[4]));
-            calendar.setFriday(Integer.parseInt(line[5]));
-            calendar.setSaturday(Integer.parseInt(line[6]));
-            calendar.setSunday(Integer.parseInt(line[7]));
-            calendar.setStartDate(line[8]);
-            calendar.setEndDate(line[9]);
+            calendar.setServiceId(row[0]);
+            calendar.setMonday(Integer.parseInt(row[1]));
+            calendar.setTuesday(Integer.parseInt(row[2]));
+            calendar.setWednesday(Integer.parseInt(row[3]));
+            calendar.setThursday(Integer.parseInt(row[4]));
+            calendar.setFriday(Integer.parseInt(row[5]));
+            calendar.setSaturday(Integer.parseInt(row[6]));
+            calendar.setSunday(Integer.parseInt(row[7]));
+            calendar.setStartDate(row[8]);
+            calendar.setEndDate(row[9]);
             return calendar;
-        } catch (Exception e) {
-            logger.warn("Skipping malformed calendar row: {}", String.join(",", line));
-            return null;
-        }
+        }).collect(Collectors.toList());
+        calendarRepository.saveAll(calendars);
+        log.info("Loaded {} calendars.", calendars.size());
     }
 
-    private FareAttribute parseFareAttribute(String[] line) {
-        try {
-            FareAttribute fareAttribute = new FareAttribute();
-            fareAttribute.setFareId(line[0]);
-            fareAttribute.setCurrencyType(line[2]);
-            fareAttribute.setPaymentMethod(Integer.parseInt(line[3]));
-            fareAttribute.setTransfers(Integer.parseInt(line[4]));
-            return fareAttribute;
-        } catch (Exception e) {
-            logger.warn("Skipping malformed fare_attribute row: {}", String.join(",", line));
-            return null;
+    private void loadFareAttributes() throws IOException, CsvException {
+        log.info("Loading fare attributes...");
+        // Load partitioned files
+        char[] partitions = "abcde".toCharArray();
+        for (char p : partitions) {
+            List<FareAttribute> fareAttributes = readCsvData("static/fare_attributes_part_a" + p + ".csv").stream().map(row -> {
+                FareAttribute fa = new FareAttribute();
+                fa.setFareId(row[0]);
+                fa.setPrice(Double.parseDouble(row[1]));
+                fa.setCurrencyType(row[2]);
+                fa.setPaymentMethod(Integer.parseInt(row[3]));
+                fa.setTransfers(Integer.parseInt(row[4]));
+                return fa;
+            }).collect(Collectors.toList());
+            fareAttributeRepository.saveAll(fareAttributes);
         }
+        log.info("Loaded fare attributes.");
     }
 
-    private FareRule parseFareRule(String[] line) {
-        try {
-            FareRule fareRule = new FareRule();
-            fareRule.setFareId(line[0]);
-            fareRule.setRouteId(line[1]);
-            return fareRule;
-        } catch (Exception e) {
-            logger.warn("Skipping malformed fare_rule row: {}", String.join(",", line));
-            return null;
+    private void loadFareRules() throws IOException, CsvException {
+        log.info("Loading fare rules...");
+        char[] partitions = "abcde".toCharArray();
+        for (char p : partitions) {
+            List<FareRule> fareRules = readCsvData("static/fare_rules_part_a" + p + ".csv").stream().map(row -> {
+                FareRule fr = new FareRule();
+                fr.setFareId(row[0]);
+                fr.setRouteId(row[1]);
+                return fr;
+            }).collect(Collectors.toList());
+            fareRuleRepository.saveAll(fareRules);
         }
+        log.info("Loaded fare rules.");
+    }
+
+    private void loadRoutes() throws IOException, CsvException {
+        log.info("Loading routes...");
+        List<Route> routes = readCsvData("static/routes.csv").stream().map(row -> {
+            Route route = new Route();
+            route.setRouteId(row[0]);
+            route.setAgencyId(row[1]);
+            route.setRouteShortName(row[2]);
+            route.setRouteLongName(row[3]);
+            route.setRouteType(Integer.parseInt(row[4]));
+            return route;
+        }).collect(Collectors.toList());
+        routeRepository.saveAll(routes);
+        log.info("Loaded {} routes.", routes.size());
+    }
+
+    private void loadStops() throws IOException, CsvException {
+        log.info("Loading stops...");
+        List<Stop> stops = readCsvData("static/stops.csv").stream().map(row -> {
+            Stop stop = new Stop();
+            stop.setStopId(row[0]);
+            stop.setStopName(row[1]);
+            stop.setStopLat(Double.parseDouble(row[2]));
+            stop.setStopLon(Double.parseDouble(row[3]));
+            return stop;
+        }).collect(Collectors.toList());
+        stopRepository.saveAll(stops);
+        log.info("Loaded {} stops.", stops.size());
+    }
+
+    private void loadStopTimes() throws IOException, CsvException {
+        log.info("Loading stop times...");
+        char[] partitions = "abcdefgh".toCharArray();
+        for (char p : partitions) {
+            List<StopTime> stopTimes = readCsvData("static/stop_times_part_a" + p + ".csv").stream().map(row -> {
+                StopTime st = new StopTime();
+                st.setTripId(row[0]);
+                st.setArrivalTime(row[1]);
+                st.setDepartureTime(row[2]);
+                st.setStopId(row[3]);
+                st.setStopSequence(Integer.parseInt(row[4]));
+                return st;
+            }).collect(Collectors.toList());
+            stopTimeRepository.saveAll(stopTimes);
+        }
+        log.info("Loaded stop times.");
+    }
+
+    private void loadTrips() throws IOException, CsvException {
+        log.info("Loading trips...");
+        List<Trip> trips = readCsvData("static/trips.csv").stream().map(row -> {
+            Trip trip = new Trip();
+            trip.setRouteId(row[0]);
+            trip.setServiceId(row[1]);
+            trip.setTripId(row[2]);
+            trip.setTripHeadsign(row[3]);
+            trip.setDirectionId(Integer.parseInt(row[4]));
+            trip.setShapeId(row[5]);
+            return trip;
+        }).collect(Collectors.toList());
+        tripRepository.saveAll(trips);
+        log.info("Loaded {} trips.", trips.size());
     }
 }
-

@@ -1,25 +1,31 @@
 package com.spring.Live.Vehicle.Map.Delhi.controller;
 
+import com.spring.Live.Vehicle.Map.Delhi.model.Trip;
+import com.spring.Live.Vehicle.Map.Delhi.repository.ScheduleProjection;
 import com.spring.Live.Vehicle.Map.Delhi.service.TransitService;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.CrossOrigin;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 
 @RestController
-@CrossOrigin(origins = "${app.cors.allowed-origins}")
+@RequestMapping("/api/transit")
 public class TransitController {
 
-    @Autowired
-    private TransitService transitService;
+    private final TransitService transitService;
 
-    @GetMapping("/api/routes")
-    public List<Map<String, Object>> getRoutesByStopName(@RequestParam String stopName) {
-        return transitService.getRoutesByStopName(stopName);
+    public TransitController(TransitService transitService) {
+        this.transitService = transitService;
+    }
+
+    @GetMapping("/trips")
+    public List<Trip> findTripsByRouteAndDirection(
+            @RequestParam String routeId,
+            @RequestParam int directionId) {
+        return transitService.findTripsByRouteAndDirection(routeId, directionId);
+    }
+
+    @GetMapping("/stops/{stopId}/schedule")
+    public List<ScheduleProjection> getScheduleForStop(@PathVariable String stopId) {
+        return transitService.getScheduleForStop(stopId);
     }
 }
