@@ -121,3 +121,5 @@ src/main/resources/static/stop_times.txt
 *.mv.db
 *.trace.db
 transit.db.mv.db
+gtfs.db
+*.db
