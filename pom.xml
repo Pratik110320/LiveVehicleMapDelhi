@@ -85,6 +85,10 @@
 			<artifactId>hibernate-community-dialects</artifactId>
 			<version>6.6.0.Final</version> <!-- Use the version matching your hibernate-core -->
 		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-actuator</artifactId>
+		</dependency>
 
 
 
