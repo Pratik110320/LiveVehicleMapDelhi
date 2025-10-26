@@ -1,27 +1,17 @@
-# Use a lightweight Java base image
-FROM eclipse-temurin:17-jdk-alpine
+FROM maven:3.9-eclipse-temurin-17 AS build
+WORKDIR /app
+COPY pom.xml .
+COPY src ./src
+RUN mvn clean package -DskipTests
 
-# Install tools needed to download and unzip data
-RUN apk add --no-cache curl unzip
-
-# Set the working directory inside the container
+FROM eclipse-temurin:17-jre
 WORKDIR /app
 
-# Create a directory for the static data
-RUN mkdir -p /app/static
-# Download the zip file from the official source and unzip it into the static directory
-# This ensures the application has the complete, up-to-date GTFS static data.
-RUN curl -L "https://otd.delhi.gov.in/gtfs/static/Delhi-GTFS-Static.zip" -o "/tmp/gtfs.zip" && \
-    unzip -o /tmp/gtfs.zip -d /app/static && \
-    rm /tmp/gtfs.zip
+# Download database file from GitHub Release
+RUN apt-get update && apt-get install -y wget && \
+    wget -O /app/gtfs.db https://github.com/Pratik110320/LiveVehicleMapDelhi/releases/download/v1.db/gtfs.db
 
-# Copy the compiled JAR file into the container
-# This is done *after* downloading data to leverage Docker layer caching
-COPY target/*.jar app.jar
+COPY --from=build /app/target/*.jar app.jar
 
-# Expose the port the app runs on
 EXPOSE 8080
-
-# Command to run the application
-# We override the gtfs.static.data.location property to point to the files we downloaded.
-ENTRYPOINT ["java", "-jar", "app.jar", "--gtfs.static.data.location=file:/app/static/"]
+ENTRYPOINT ["java", "-jar", "app.jar"]
