@@ -9,5 +9,7 @@ import java.util.List;
 @Repository
 public interface StopRepository extends JpaRepository<Stop, String> {
     List<Stop> findByStopNameContainingIgnoreCase(String name);
+
+
     List<Stop> findByStopLatBetweenAndStopLonBetween(double minLat, double maxLat, double minLon, double maxLon);
 }

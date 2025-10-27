@@ -6,6 +6,7 @@ import com.spring.Live.Vehicle.Map.Delhi.service.GtfsRealtimeService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
@@ -21,8 +22,16 @@ public class RealtimeController {
     }
 
     @GetMapping("/VehiclePositions")
-    public ResponseEntity<List<VehiclePosition>> getRealtimeVehicles() throws IOException {
-        List<VehiclePosition> list = gtfsService.fetchVehiclePositions();
+    public ResponseEntity<List<VehiclePosition>> getRealtimeVehicles(
+
+            @RequestParam(required = false) Double minLat,
+            @RequestParam(required = false) Double maxLat,
+            @RequestParam(required = false) Double minLon,
+            @RequestParam(required = false) Double maxLon,
+            @RequestParam(required = false) Integer limit
+    ) throws IOException {
+
+        List<VehiclePosition> list = gtfsService.fetchVehiclePositions(minLat, maxLat, minLon, maxLon, limit);
         return ResponseEntity.ok(list);
     }
 }

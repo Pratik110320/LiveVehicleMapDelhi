@@ -13,6 +13,7 @@ import org.springframework.web.client.RestTemplate;
 import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 public class GtfsRealtimeService {
@@ -30,15 +31,10 @@ public class GtfsRealtimeService {
         this.apiKey = apiKey;
     }
 
-    /**
-     * Fetches the GTFS-RT protobuf bytes and parses vehicle positions into DTOs.
-     * Returns empty list on errors (logs the error).
-     */
-    public List<VehiclePosition> fetchVehiclePositions() {
+    public List<VehiclePosition> fetchVehiclePositions(Double minLat, Double maxLat, Double minLon, Double maxLon, Integer limit) {
         try {
             String urlWithKey = feedUrl;
             if (apiKey != null && !apiKey.trim().isEmpty() && !apiKey.equals("YOUR_PRIVATE_KEY_HERE")) {
-                // Append key as query param (the user supplied sample uses ?key=)
                 if (urlWithKey.contains("?")) {
                     urlWithKey += "&key=" + apiKey;
                 } else {
@@ -47,7 +43,6 @@ public class GtfsRealtimeService {
             }
             log.debug("Fetching GTFS-RT feed from: {}", urlWithKey);
 
-            // get raw bytes
             byte[] feedBytes = restTemplate.getForObject(urlWithKey, byte[].class);
             if (feedBytes == null || feedBytes.length == 0) {
                 log.warn("GTFS-RT feed returned no data");
@@ -62,45 +57,58 @@ public class GtfsRealtimeService {
                 if (!entity.hasVehicle()) continue;
 
                 GtfsRealtime.VehiclePosition vp = entity.getVehicle();
-                if (!vp.hasPosition()) continue; // skip only those with no coordinates
+                if (!vp.hasPosition()) continue;
 
                 VehiclePosition dto = new VehiclePosition();
 
-                // Vehicle ID
                 String vid = null;
                 if (vp.hasVehicle() && vp.getVehicle().hasId()) vid = vp.getVehicle().getId();
                 else if (entity.hasId()) vid = entity.getId();
                 dto.setVehicleId(vid);
 
-                // Route ID
                 String route = vp.hasTrip() && vp.getTrip().hasRouteId()
                         ? vp.getTrip().getRouteId() : null;
                 dto.setRouteId(route);
 
-                // Position
                 dto.setLatitude(vp.getPosition().getLatitude());
                 dto.setLongitude(vp.getPosition().getLongitude());
                 dto.setBearing(vp.getPosition().hasBearing() ? vp.getPosition().getBearing() : null);
-                dto.setSpeed(vp.getPosition().hasSpeed() ? vp.getPosition().getSpeed() : null);
+
+                // --- PERFORMANCE OPTIMIZATION ---
+                // Convert m/s to km/h here on the backend
+                if (vp.getPosition().hasSpeed()) {
+                    dto.setSpeed(vp.getPosition().getSpeed() * 3.6f); // m/s to km/h
+                } else {
+                    dto.setSpeed(null);
+                }
+
                 dto.setTimestamp(vp.hasTimestamp() ? vp.getTimestamp() : null);
 
                 positions.add(dto);
             }
-            log.info("Returning {} vehicle positions", positions.size());
+            log.info("Parsed {} total vehicle positions", positions.size());
 
+            // --- PERFORMANCE OPTIMIZATION ---
+            // Filter the list *on the backend* before sending it to the client.
+            // This massively reduces payload size and client-side processing.
+            List<VehiclePosition> filteredPositions = positions;
 
-            int max = 500;
-            if (positions.size() > max) {
-                List<VehiclePosition> sampled = new ArrayList<>(max);
-                double step = (double) positions.size() / max;
-                for (int i = 0; i < max; i++) {
-                    int idx = (int) (i * step);
-                    sampled.add(positions.get(idx));
-                }
-                log.info("Sampled {} out of {} vehicles for UI", sampled.size(), positions.size());
-                return sampled;
+            if (minLat != null && maxLat != null && minLon != null && maxLon != null) {
+                filteredPositions = positions.stream()
+                        .filter(vp -> vp.getLatitude() >= minLat && vp.getLatitude() <= maxLat &&
+                                vp.getLongitude() >= minLon && vp.getLongitude() <= maxLon)
+                        .collect(Collectors.toList());
+                log.info("Filtered to {} positions within map bounds", filteredPositions.size());
             }
-            return positions;
+
+            // Apply the limit *after* filtering
+            if (limit != null && filteredPositions.size() > limit) {
+                log.info("Sampling {} vehicles down to limit of {}", filteredPositions.size(), limit);
+                // Simple limit, not random sampling
+                return filteredPositions.subList(0, limit);
+            }
+
+            return filteredPositions;
 
         } catch (Exception ex) {
             log.error("Error fetching/parsing GTFS-RT feed", ex);

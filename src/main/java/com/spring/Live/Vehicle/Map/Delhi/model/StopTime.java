@@ -3,7 +3,11 @@ package com.spring.Live.Vehicle.Map.Delhi.model;
 import jakarta.persistence.*;
 
 @Entity
-@Table(name = "stop_times")
+@Table(name = "stop_times", indexes = {
+
+        @Index(name = "idx_stop_id", columnList = "stop_id"),
+        @Index(name = "idx_trip_id", columnList = "trip_id")
+})
 @IdClass(StopTimeId.class)
 public class StopTime {
 

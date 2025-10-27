@@ -1,12 +1,11 @@
 package com.spring.Live.Vehicle.Map.Delhi.model;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
 
 @Entity
-@Table(name = "stops")
+@Table(name = "stops", indexes = {
+        @Index(name = "idx_stop_lat_lon", columnList = "stop_lat, stop_lon")
+})
 public class Stop {
 
     @Id

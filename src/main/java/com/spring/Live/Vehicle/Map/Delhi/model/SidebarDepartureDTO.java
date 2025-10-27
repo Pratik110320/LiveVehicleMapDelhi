@@ -1,23 +1,43 @@
 package com.spring.Live.Vehicle.Map.Delhi.model;
 
-public class StopBusScheduleDTO {
+public class SidebarDepartureDTO {
 
+    private String stopId;
+    private String stopName;
     private String routeId;
     private String routeShortName;
     private String routeLongName;
     private String arrivalTime;
-    private String departureTime;
 
 
-    public StopBusScheduleDTO(String routeId, String routeShortName, String routeLongName, String arrivalTime, String departureTime) {
+    private transient long diffSec;
+
+    // Constructor for JPA Projections
+    public SidebarDepartureDTO(String stopId, String stopName, String routeId, String routeShortName, String routeLongName, String arrivalTime) {
+        this.stopId = stopId;
+        this.stopName = stopName;
         this.routeId = routeId;
         this.routeShortName = routeShortName;
         this.routeLongName = routeLongName;
         this.arrivalTime = arrivalTime;
-        this.departureTime = departureTime;
     }
 
-    public StopBusScheduleDTO() {}
+    // Getters and Setters
+    public String getStopId() {
+        return stopId;
+    }
+
+    public void setStopId(String stopId) {
+        this.stopId = stopId;
+    }
+
+    public String getStopName() {
+        return stopName;
+    }
+
+    public void setStopName(String stopName) {
+        this.stopName = stopName;
+    }
 
     public String getRouteId() {
         return routeId;
@@ -51,11 +71,11 @@ public class StopBusScheduleDTO {
         this.arrivalTime = arrivalTime;
     }
 
-    public String getDepartureTime() {
-        return departureTime;
+    public long getDiffSec() {
+        return diffSec;
     }
 
-    public void setDepartureTime(String departureTime) {
-        this.departureTime = departureTime;
+    public void setDiffSec(long diffSec) {
+        this.diffSec = diffSec;
     }
 }

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Delhi Bus Live Map | Real-time Tracking</title>
     <!-- Leaflet CSS & JS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
@@ -38,6 +38,7 @@
             background-color: #f1f5f9;
             color: var(--dark);
             line-height: 1.6;
+            overflow: hidden;
         }
 
         .container {
@@ -54,6 +55,7 @@
             justify-content: space-between;
             align-items: center;
             z-index: 1000;
+            flex-shrink: 0;
         }
 
         .logo-container {
@@ -128,6 +130,10 @@
             background-color: #0ea271;
         }
 
+        .control-btn.rotating .fa-sync-alt {
+            animation: spin 1s linear;
+        }
+
         .main-content {
             display: flex;
             flex: 1;
@@ -144,6 +150,7 @@
             gap: 20px;
             overflow-y: auto;
             transition: var(--transition);
+            z-index: 500;
         }
 
         .sidebar-section {
@@ -281,7 +288,7 @@
             position: absolute;
             top: 20px;
             right: 20px;
-            z-index: 1000;
+            z-index: 400;
             display: flex;
             flex-direction: column;
             gap: 10px;
@@ -316,7 +323,7 @@
             align-items: center;
             gap: 8px;
             font-size: 0.875rem;
-            z-index: 1000;
+            z-index: 400;
         }
 
         .refresh-indicator .dot {
@@ -334,7 +341,7 @@
             right: 0;
             bottom: 0;
             background-color: rgba(255, 255, 255, 0.8);
-            display: flex;
+            display: none;
             align-items: center;
             justify-content: center;
             z-index: 2000;
@@ -394,7 +401,6 @@
             margin: 0;
         }
 
-        /* Departures Sidebar Styles */
         #departures-sidebar {
             position: absolute;
             top: 80px;
@@ -422,7 +428,8 @@
         }
 
         .departures-list {
-            padding-left: 18px;
+            list-style: none;
+            padding-left: 0;
         }
 
         .departures-list li {
@@ -456,7 +463,6 @@
             font-size: 0.875rem;
         }
 
-        /* Export Button Styles */
         .export-buttons {
             display: flex;
             gap: 8px;
@@ -501,7 +507,6 @@
             background-color: rgba(37, 99, 235, 0.1);
         }
 
-        /* Welcome Overlay */
         .welcome-overlay {
             position: absolute;
             top: 0;
@@ -542,14 +547,18 @@
             justify-content: center;
         }
 
-        /* Responsive design */
+        .toggle-sidebar {
+            display: none;
+        }
+
         @media (max-width: 768px) {
             .sidebar {
                 width: 280px;
                 position: absolute;
                 left: -280px;
-                height: 100%;
-                z-index: 500;
+                height: calc(100vh - 65px);
+                top: 65px;
+                z-index: 1500;
             }
 
             .sidebar.active {
@@ -559,6 +568,7 @@
             #departures-sidebar {
                 width: 300px;
                 right: 10px;
+                top: 75px;
             }
 
             .toggle-sidebar {
@@ -581,6 +591,12 @@
         @media (max-width: 480px) {
             header {
                 padding: 1rem;
+                height: 60px;
+            }
+
+            .sidebar {
+                height: calc(100vh - 60px);
+                top: 60px;
             }
 
             .controls {
@@ -591,6 +607,10 @@
                 display: none;
             }
 
+            .control-btn {
+                padding: 8px 12px;
+            }
+
             #departures-sidebar {
                 width: 280px;
                 right: 5px;
@@ -598,7 +618,6 @@
             }
         }
 
-        /* Custom popup styles */
         .leaflet-popup-content-wrapper {
             border-radius: var(--border-radius);
             box-shadow: var(--shadow);
@@ -638,6 +657,26 @@
         .imminent-arrival {
             color: var(--primary);
             font-weight: bold;
+        }
+
+        .bus-marker-icon {
+            background-color: var(--primary);
+            border: 2px solid white;
+            border-radius: 50%;
+            box-shadow: var(--shadow);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .stop-marker-icon {
+            background-color: var(--secondary);
+            border: 2px solid white;
+            border-radius: 50%;
+            box-shadow: var(--shadow);
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
     </style>
 </head>
@@ -778,7 +817,6 @@
                 <div>Loading map data...</div>
             </div>
 
-            <!-- Welcome Overlay -->
             <div class="welcome-overlay" id="welcome-overlay">
                 <div class="welcome-content">
                     <h2 class="welcome-title">Delhi Bus Live Map</h2>
@@ -800,7 +838,6 @@
             </div>
         </div>
 
-        <!-- Departures Sidebar -->
         <div id="departures-sidebar">
             <div class="departures-header">
                 <div class="departures-title">Next Departures In Area</div>
@@ -812,46 +849,78 @@
 </div>
 
 <script>
-    // Icons (using your original icons)
-const busIcon = L.icon({
-    iconUrl: 'https://cdn-icons-png.flaticon.com/512/2207/2207497.png', // new bus icon
-    iconSize: [36, 36],
-    iconAnchor: [18, 36],
-    popupAnchor: [0, -32]
-});
+    // Custom icons
+    const busDivIcon = L.divIcon({
+        html: '<i class="fas fa-bus" style="color: white; font-size: 16px;"></i>',
+        className: 'bus-marker-icon',
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+        popupAnchor: [0, -16],
+    });
 
-const stopIcon = L.icon({
-    iconUrl: 'https://cdn-icons-png.flaticon.com/512/10981/10981015.png', // new bus stop icon
-    iconSize: [32, 32],
-    iconAnchor: [16, 32],
-    popupAnchor: [0, -28]
-});
+    const stopDivIcon = L.divIcon({
+        html: '<i class="fas fa-map-pin" style="color: white; font-size: 14px;"></i>',
+        className: 'stop-marker-icon',
+        iconSize: [28, 28],
+        iconAnchor: [14, 28],
+        popupAnchor: [0, -28],
+    });
 
-
-    // Initialize map with a zoomed-in view for better performance
-    const connaughtPlace = [28.6328, 77.2197]; // A central location in Delhi
-    const delhiCenter = [28.6139, 77.2090]; // Original Delhi center
-    const map = L.map('map').setView(connaughtPlace, 15); // Start zoomed in
+    // Initialize map with better zoom controls
+    const connaughtPlace = [28.6328, 77.2197];
+    const delhiCenter = [28.6139, 77.2090];
+    const map = L.map('map', {
+        doubleClickZoom: true,
+        scrollWheelZoom: true,
+        touchZoom: true,
+        zoomSnap: 0.5,
+        zoomDelta: 0.5,
+        wheelDebounceTime: 100
+    }).setView(connaughtPlace, 15);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map);
 
+    // Prevent viewport zoom
+    document.addEventListener('gesturestart', function(e) {
+        e.preventDefault();
+    });
+
+    document.addEventListener('gesturechange', function(e) {
+        e.preventDefault();
+    });
+
+    document.addEventListener('gestureend', function(e) {
+        e.preventDefault();
+    });
+
     // Global variables
-    let allStops = [];
-    let stopMarkers = [];
-    let busMarkers = [];
     let busLimit = 300;
     let showBuses = true;
     let showStops = true;
+    let stopMarkers = {};
+    let busMarkers = {};
+    let loadingTasks = 0;
+    const loadingOverlay = document.getElementById('loading-overlay');
+
+    function showLoading() {
+        loadingTasks++;
+        loadingOverlay.style.display = 'flex';
+    }
+
+    function hideLoading() {
+        loadingTasks--;
+        if (loadingTasks <= 0) {
+            loadingTasks = 0;
+            loadingOverlay.style.display = 'none';
+        }
+    }
 
     // UI Controls
     document.getElementById('refresh-btn').addEventListener('click', function() {
-        loadBusPositions();
-        updateVisibleStopMarkers();
-        updateNextDeparturesSidebar();
-        this.classList.add('rotating');
-        setTimeout(() => {
-            this.classList.remove('rotating');
-        }, 1000);
+        const btn = this;
+        btn.classList.add('rotating');
+        handleMapUpdate();
+        setTimeout(() => btn.classList.remove('rotating'), 1000);
     });
 
     document.getElementById('reset-view-btn').addEventListener('click', function() {
@@ -862,6 +931,8 @@ const stopIcon = L.icon({
         if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(function(position) {
                 map.setView([position.coords.latitude, position.coords.longitude], 15);
+            }, () => {
+                alert("Could not get your location.");
             });
         } else {
             alert("Geolocation is not supported by this browser.");
@@ -872,15 +943,9 @@ const stopIcon = L.icon({
         document.getElementById('sidebar').classList.toggle('active');
     });
 
-    document.getElementById('zoom-in').addEventListener('click', function() {
-        map.zoomIn();
-    });
+    document.getElementById('zoom-in').addEventListener('click', () => map.zoomIn());
+    document.getElementById('zoom-out').addEventListener('click', () => map.zoomOut());
 
-    document.getElementById('zoom-out').addEventListener('click', function() {
-        map.zoomOut();
-    });
-
-    // Welcome overlay controls
     document.getElementById('start-exploring-btn').addEventListener('click', function() {
         document.getElementById('welcome-overlay').style.display = 'none';
     });
@@ -890,7 +955,6 @@ const stopIcon = L.icon({
         document.getElementById('welcome-overlay').style.display = 'none';
     });
 
-    // Filter controls
     document.getElementById('bus-limit').addEventListener('input', function() {
         busLimit = parseInt(this.value);
         document.getElementById('bus-limit-value').textContent = `${busLimit} buses`;
@@ -900,8 +964,8 @@ const stopIcon = L.icon({
     document.getElementById('show-buses').addEventListener('change', function() {
         showBuses = this.checked;
         if (!showBuses) {
-            busMarkers.forEach(marker => map.removeLayer(marker));
-            busMarkers = [];
+            Object.values(busMarkers).forEach(marker => map.removeLayer(marker));
+            busMarkers = {};
             document.getElementById('active-buses').textContent = '0';
         } else {
             loadBusPositions();
@@ -911,354 +975,367 @@ const stopIcon = L.icon({
     document.getElementById('show-stops').addEventListener('change', function() {
         showStops = this.checked;
         if (!showStops) {
-            stopMarkers.forEach(marker => map.removeLayer(marker));
-            stopMarkers = [];
+            Object.values(stopMarkers).forEach(marker => map.removeLayer(marker));
+            stopMarkers = {};
             document.getElementById('visible-stops').textContent = '0';
         } else {
-            updateVisibleStopMarkers();
+            loadVisibleStops();
         }
     });
 
-    // Load all bus stops (for the current view only)
     function loadVisibleStops() {
         if (!showStops) return;
 
+        showLoading();
         const bounds = map.getBounds();
         const minLat = bounds.getSouth();
         const maxLat = bounds.getNorth();
         const minLon = bounds.getWest();
         const maxLon = bounds.getEast();
 
-        // Show loading
-        document.getElementById('loading-overlay').style.display = 'flex';
-
-        // Use the visible stops API endpoint
         fetch(`/api/stops/visible?minLat=${minLat}&maxLat=${maxLat}&minLon=${minLon}&maxLon=${maxLon}`)
             .then(res => res.json())
             .then(stops => {
-                // Remove existing stop markers
-                stopMarkers.forEach(marker => map.removeLayer(marker));
-                stopMarkers = [];
+                const newStopMarkers = {};
 
                 stops.forEach(stop => {
-                    const marker = L.marker([stop.stopLat, stop.stopLon], { icon: stopIcon })
-                        .addTo(map);
+                    if (stopMarkers[stop.stopId]) {
+                        newStopMarkers[stop.stopId] = stopMarkers[stop.stopId];
+                        delete stopMarkers[stop.stopId];
+                    } else {
+                        const marker = L.marker([stop.stopLat, stop.stopLon], {
+                            icon: stopDivIcon,
+                            stopData: stop
+                        });
 
-                    marker.on('click', function() {
-                        // Fetch bus schedule for this stop
-                        fetch(`/api/stops/${stop.stopId}/routesToday`)
-                            .then(res => res.json())
-                            .then(busRoutes => {
-                                // parse times and build countdowns
-                                const now = new Date();
-                                // Group by route to only highlight next arrival per route
-                                let byRoute = {};
-                                busRoutes.forEach(route => {
-                                    // GTFS Arrival time is often 'HH:mm:ss'
-                                    const [hh, mm, ss] = route.arrivalTime.split(":").map(Number);
-                                    let arrDate = new Date(now);
-                                    arrDate.setHours(hh, mm, ss || 0, 0);
-                                    if (arrDate < now) arrDate.setDate(arrDate.getDate() + 1); // for after midnight service
-                                    const diffSec = Math.floor((arrDate - now)/1000);
-                                    if (!byRoute[route.routeId] || byRoute[route.routeId].diffSec > diffSec) {
-                                        byRoute[route.routeId] = { ...route, diffSec, arrDate };
-                                    }
-                                });
-                                // Convert to array and sort by soonest
-                                let soonestArrivals = Object.values(byRoute).sort((a,b) => a.diffSec-b.diffSec);
-                                // Build popup html with countdowns
-                                let popupContent = `<div class="popup-title">${stop.stopName}</div>
-                                                   <div class="popup-content">Stop ID: ${stop.stopId}</div>
-                                                   <div class="export-buttons">
-                                                       <button class="export-btn pdf" id="export-pdf-btn">
-                                                           <i class="fas fa-file-pdf"></i> Export PDF
-                                                       </button>
-                                                       <button class="export-btn ical" id="export-ical-btn">
-                                                           <i class="fas fa-calendar-alt"></i> Export iCal
-                                                       </button>
-                                                   </div>
-                                                   <div class="popup-content"><b>Next arrivals:</b></div>
-                                                   <div class="popup-list" id="popup-routes-list">`;
-                                if (soonestArrivals.length === 0) {
-                                    popupContent += "<div class='popup-content'>No scheduled buses</div>";
-                                } else {
-                                    soonestArrivals.forEach((route, idx) => {
-                                        let countStr = formatCountdown(route.diffSec);
-                                        // Highlight next imminent bus for the stop
-                                        let extraClass = idx === 0 ? 'imminent-arrival' : '';
-                                        popupContent += `<div class="popup-list-item ${extraClass}">
-                                            <b>Route:</b> ${route.routeShortName || route.routeId}
-                                            (${route.routeLongName || ''})<br>
-                                            Arrival in: <span class="countdown" data-arrivetime="${route.arrDate.toISOString()}">${countStr}</span>
-                                            (<span class="arrivaltime">${route.arrivalTime}</span>)
-                                        </div>`;
-                                    });
-                                }
-                                popupContent += "</div>";
+                        marker.addTo(map);
+                        marker.on('click', function() {
+                            handleStopClick(marker, stop);
+                        });
 
-                                marker.bindPopup(popupContent).openPopup();
-
-                                // Bind export buttons after a short delay
-                                setTimeout(() => {
-                                    // "busRoutes" is in the current closure
-                                    let pdfBtn = document.getElementById("export-pdf-btn");
-                                    let icalBtn = document.getElementById("export-ical-btn");
-                                    pdfBtn && pdfBtn.addEventListener("click", () => exportSchedulePDF(stop, busRoutes));
-                                    icalBtn && icalBtn.addEventListener("click", () => exportScheduleICal(stop, busRoutes));
-                                }, 250);
-
-                                // Start countdown timer updates
-                                setTimeout(() => setupCountdownUpdates(marker), 500);
-                            })
-                            .catch(() => {
-                                marker.bindPopup(`<div class="popup-title">${stop.stopName}</div><div class="popup-content">Error loading schedule</div>`).openPopup();
-                            });
-                    });
-
-                    stopMarkers.push(marker);
+                        newStopMarkers[stop.stopId] = marker;
+                    }
                 });
 
-                document.getElementById('visible-stops').textContent = stops.length;
+                Object.values(stopMarkers).forEach(marker => map.removeLayer(marker));
+                stopMarkers = newStopMarkers;
+
+                document.getElementById('visible-stops').textContent = Object.keys(stopMarkers).length;
                 updateDisplayInfo();
-                document.getElementById('loading-overlay').style.display = 'none';
+                hideLoading();
             })
             .catch(err => {
                 console.error("Error loading stops:", err);
-                document.getElementById('loading-overlay').style.display = 'none';
+                hideLoading();
             });
     }
 
-    // Countdown functions
-    function formatCountdown(diffSec) {
-        if (diffSec < 0) return "Departed";
-        if (diffSec < 60) return diffSec+"s";
-        if (diffSec < 3600) return Math.floor(diffSec/60)+"m "+(diffSec%60)+"s";
-        return Math.floor(diffSec/3600)+"h "+Math.floor((diffSec%3600)/60)+"m";
+    function handleStopClick(marker, stop) {
+        marker.bindPopup(`<div class="popup-title">${stop.stopName}</div><div class="popup-content">Loading schedule...</div>`).openPopup();
+
+        fetch(`/api/stops/${stop.stopId}/routesToday`)
+            .then(res => res.json())
+            .then(busRoutes => {
+                const now = new Date();
+                let byRoute = {};
+
+                busRoutes.forEach(route => {
+                    const [hh, mm, ss] = route.arrivalTime.split(":").map(Number);
+                    let arrDate = new Date(now);
+                    arrDate.setHours(hh, mm, ss || 0, 0);
+                    if (arrDate < now) arrDate.setDate(arrDate.getDate() + 1);
+
+                    const diffSec = Math.floor((arrDate - now) / 1000);
+
+                    if (diffSec >= 0) {
+                        if (!byRoute[route.routeId] || byRoute[route.routeId].diffSec > diffSec) {
+                            byRoute[route.routeId] = { ...route, diffSec, arrDate };
+                        }
+                    }
+                });
+
+                let soonestArrivals = Object.values(byRoute).sort((a, b) => a.diffSec - b.diffSec);
+
+                let popupContent = `<div class="popup-title">${stop.stopName}</div>
+                                   <div class="popup-content">Stop ID: ${stop.stopId}</div>
+                                   <div class="export-buttons">
+                                       <button class="export-btn pdf" data-stopid="${stop.stopId}">
+                                           <i class="fas fa-file-pdf"></i> PDF
+                                       </button>
+                                       <button class="export-btn ical" data-stopid="${stop.stopId}">
+                                           <i class="fas fa-calendar-alt"></i> iCal
+                                       </button>
+                                   </div>
+                                   <div class="popup-content"><b>Next arrivals:</b></div>
+                                   <div class="popup-list" id="popup-routes-list">`;
+
+                if (soonestArrivals.length === 0) {
+                    popupContent += "<div class='popup-content'>No scheduled buses found for today.</div>";
+                } else {
+                    soonestArrivals.forEach((route, idx) => {
+                        let countStr = formatCountdown(route.diffSec);
+                        let extraClass = idx === 0 ? 'imminent-arrival' : '';
+                        popupContent += `<div class="popup-list-item ${extraClass}">
+                            <b>Route:</b> ${route.routeShortName || route.routeId}
+                            (${route.routeLongName || ''})<br>
+                            Arrival in: <span class="countdown" data-arrivetime="${route.arrDate.toISOString()}">${countStr}</span>
+                            (<span class="arrival-time">${route.arrivalTime}</span>)
+                        </div>`;
+                    });
+                }
+                popupContent += "</div>";
+
+                marker.bindPopup(popupContent).openPopup();
+
+                const popupElement = marker.getPopup().getElement();
+                popupElement.querySelector(".export-btn.pdf").addEventListener("click", () => exportSchedulePDF(stop, busRoutes));
+                popupElement.querySelector(".export-btn.ical").addEventListener("click", () => exportScheduleICal(stop, busRoutes));
+
+                setupCountdownUpdates(marker);
+            })
+            .catch(() => {
+                marker.bindPopup(`<div class="popup-title">${stop.stopName}</div><div class="popup-content">Error loading schedule</div>`).openPopup();
+            });
     }
 
+    function formatCountdown(diffSec) {
+        if (diffSec < 0) return "Departed";
+        if (diffSec < 60) return diffSec + "s";
+        if (diffSec < 3600) return Math.floor(diffSec / 60) + "m " + (diffSec % 60) + "s";
+        return Math.floor(diffSec / 3600) + "h " + Math.floor((diffSec % 3600) / 60) + "m";
+    }
+
+    let activeCountdownInterval = null;
     function setupCountdownUpdates(marker) {
-        // update all countdown spans inside the current popup every second
+        if (activeCountdownInterval) {
+            clearInterval(activeCountdownInterval);
+        }
+
         const popup = marker.getPopup();
         if (!popup) return;
-        const intervalId = setInterval(() => {
+
+        activeCountdownInterval = setInterval(() => {
             const el = popup.getElement();
-            if (!el) { clearInterval(intervalId); return; }
+            if (!el || !map.hasLayer(popup)) {
+                clearInterval(activeCountdownInterval);
+                activeCountdownInterval = null;
+                return;
+            }
+
             const spans = el.querySelectorAll('.countdown');
             const now = new Date();
             spans.forEach(span => {
                 const arrISO = span.getAttribute('data-arrivetime');
                 const arrDt = new Date(arrISO);
-                let diffSec = Math.floor((arrDt - now)/1000);
+                let diffSec = Math.floor((arrDt - now) / 1000);
                 span.textContent = formatCountdown(diffSec);
             });
         }, 1000);
-        // Stop updating when popup is closed
-        popup.on('remove', () => clearInterval(intervalId));
+
+        popup.on('remove', () => {
+            if (activeCountdownInterval) {
+                clearInterval(activeCountdownInterval);
+                activeCountdownInterval = null;
+            }
+        });
     }
 
-    // Export Functions
     function exportSchedulePDF(stop, busRoutes) {
-        if (!window.jspdf) {
-            alert("Loading jsPDF...");
-            let script = document.createElement("script");
-            script.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
-            script.onload = () => exportSchedulePDF(stop, busRoutes);
-            document.body.appendChild(script);
+        if (!window.jspdf || !window.jspdf.jsPDF) {
+            alert("PDF library is not loaded.");
             return;
         }
-        const doc = new window.jspdf.jsPDF();
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
         doc.text(`Bus Stop: ${stop.stopName} (ID: ${stop.stopId})`, 10, 16);
-        doc.autoTable && doc.autoTable({
-            head: [["Route", "Long Name", "Arr. Time", "Dep. Time"]],
-            body: busRoutes.map(r => [
-                r.routeShortName||r.routeId,
-                r.routeLongName||"",
-                r.arrivalTime,
-                r.departureTime
-            ])
-        });
-        if (!doc.autoTable) {
-            // fallback: simple list
-            busRoutes.forEach((r, i) => {
-                doc.text(`${i+1}. ${r.routeShortName||r.routeId}: ${r.arrivalTime} - ${r.departureTime}`, 10, 30+i*8);
+
+        const validRoutes = busRoutes.map(r => [
+            r.routeShortName || r.routeId || "N/A",
+            r.routeLongName || "N/A",
+            r.arrivalTime || "N/A",
+            r.departureTime || "N/A"
+        ]);
+
+        if (doc.autoTable) {
+            doc.autoTable({
+                startY: 20,
+                head: [["Route", "Long Name", "Arr. Time", "Dep. Time"]],
+                body: validRoutes,
+            });
+        } else {
+            doc.text("jsPDF-AutoTable plugin not loaded. Showing basic list.", 10, 30);
+            validRoutes.forEach((r, i) => {
+                doc.text(`${i + 1}. ${r[0]}: ${r[2]} - ${r[3]}`, 10, 40 + i * 8);
             });
         }
         doc.save(`stop_${stop.stopId}_schedule.pdf`);
     }
 
     function exportScheduleICal(stop, busRoutes) {
-        // Generate iCal content
         const pad = x => String(x).padStart(2, '0');
         const now = new Date();
-        let calContent =
-`BEGIN:VCALENDAR
+        let calContent = `BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//DelhiBusProject/EN
 CALSCALE:GREGORIAN
 X-WR-CALNAME:Bus Departures - ${stop.stopName}
 `;
-        busRoutes.forEach((route, idx) => {
-            let [h,m,s] = route.arrivalTime.split(":");
-            h=pad(h); m=pad(m); s=pad(s||"00");
-            // Use today's date, if after midnight set tomorrow
-            let dt = new Date(now); dt.setHours(+h, +m, +s, 0);
+        busRoutes.forEach((route) => {
+            if (!route.arrivalTime) return;
+            let [h, m, s] = route.arrivalTime.split(":");
+            h = pad(h); m = pad(m); s = pad(s || "00");
+
+            let dt = new Date(now);
+            dt.setHours(+h, +m, +s, 0);
             if (dt < now) dt.setDate(dt.getDate() + 1);
-            let dtstr = dt.getFullYear() + pad(dt.getMonth()+1) + pad(dt.getDate()) + "T" + pad(dt.getHours()) + pad(dt.getMinutes()) + "00";
-            calContent +=
-`BEGIN:VEVENT
-SUMMARY:${route.routeShortName||route.routeId} bus at ${stop.stopName}
+
+            let dtstr = dt.getFullYear() + pad(dt.getMonth() + 1) + pad(dt.getDate()) + "T" + pad(dt.getHours()) + pad(dt.getMinutes()) + "00";
+
+            calContent += `BEGIN:VEVENT
+SUMMARY:${route.routeShortName || route.routeId} bus at ${stop.stopName}
 DTSTART;TZID=Asia/Kolkata:${dtstr}
-DESCRIPTION:Route ${route.routeLongName||""} Departure
+DESCRIPTION:Route ${route.routeLongName || ""} Departure
 END:VEVENT
 `;
         });
         calContent += "END:VCALENDAR";
-        // Download as .ics
-        let blob = new Blob([calContent], {type: "text/calendar"});
+
+        let blob = new Blob([calContent], { type: "text/calendar" });
         let a = document.createElement("a");
         a.href = URL.createObjectURL(blob);
         a.download = `stop_${stop.stopId}_schedule.ics`;
         a.click();
+        URL.revokeObjectURL(a.href);
     }
 
-    // Show live bus positions (limited to busLimit)
     function loadBusPositions() {
         if (!showBuses) return;
 
-        // Show loading
-        document.getElementById('loading-overlay').style.display = 'flex';
+        showLoading();
+        const bounds = map.getBounds();
+        const url = `/api/realtime/VehiclePositions?minLat=${bounds.getSouth()}&maxLat=${bounds.getNorth()}&minLon=${bounds.getWest()}&maxLon=${bounds.getEast()}&limit=${busLimit}`;
 
-        fetch('/api/realtime/VehiclePositions')
+        fetch(url)
             .then(res => res.json())
             .then(buses => {
-                // Remove existing bus markers
-                busMarkers.forEach(marker => map.removeLayer(marker));
-                busMarkers = [];
+                const newBusMarkers = {};
 
-                // Limit the number of buses to display
-                const limitedBuses = buses.slice(0, busLimit);
-                const bounds = map.getBounds();
+                buses.forEach(bus => {
+                    const vid = bus.vehicleId;
+                    if (!vid || !bus.latitude || !bus.longitude) return;
 
-                limitedBuses.forEach(bus => {
-                    if (bus.latitude && bus.longitude && bounds.contains([bus.latitude, bus.longitude])) {
-                        let popupContent = `<div class="popup-title">Bus ${bus.vehicleId || ''}</div>
-                                           <div class="popup-content">
-                                               <b>Route:</b> ${bus.routeId || ''}<br>
-                                               <b>Status:</b> In Service<br>
-                                               <b>Speed:</b> ${bus.speed || 'N/A'} km/h<br>
-                                               <b>Last Update:</b> ${bus.timestamp ? new Date(bus.timestamp).toLocaleTimeString() : 'Unknown'}
-                                           </div>`;
+                    let popupContent = `<div class="popup-title">Bus ${bus.vehicleId || ''}</div>
+                                       <div class="popup-content">
+                                           <b>Route:</b> ${bus.routeId || 'N/A'}<br>
+                                           <b>Speed:</b> ${bus.speed != null ? bus.speed.toFixed(1) : 'N/A'} km/h<br>
+                                           <b>Last Update:</b> ${bus.timestamp ? new Date(bus.timestamp * 1000).toLocaleTimeString() : 'Unknown'}
+                                       </div>`;
 
-                        const marker = L.marker([bus.latitude, bus.longitude], { icon: busIcon })
+                    if (busMarkers[vid]) {
+                        const marker = busMarkers[vid];
+                        marker.setLatLng([bus.latitude, bus.longitude]);
+                        marker.setPopupContent(popupContent);
+                        newBusMarkers[vid] = marker;
+                        delete busMarkers[vid];
+                    } else {
+                        const marker = L.marker([bus.latitude, bus.longitude], { icon: busDivIcon })
                             .addTo(map)
                             .bindPopup(popupContent);
-
-                        busMarkers.push(marker);
+                        newBusMarkers[vid] = marker;
                     }
                 });
 
-                document.getElementById('active-buses').textContent = busMarkers.length;
+                Object.values(busMarkers).forEach(marker => map.removeLayer(marker));
+                busMarkers = newBusMarkers;
+
+                document.getElementById('active-buses').textContent = Object.keys(busMarkers).length;
                 updateDisplayInfo();
-                document.getElementById('loading-overlay').style.display = 'none';
+                hideLoading();
             })
             .catch(err => {
                 console.error("Error loading bus positions:", err);
-                document.getElementById('loading-overlay').style.display = 'none';
+                hideLoading();
             });
     }
 
-    // Update display information
     function updateDisplayInfo() {
-        const info = `Showing ${busMarkers.length} buses and ${stopMarkers.length} stops`;
+        const info = `Showing ${Object.keys(busMarkers).length} buses and ${Object.keys(stopMarkers).length} stops`;
         document.getElementById('current-display-info').textContent = info;
     }
 
-    // Departures Sidebar Functions
     function updateNextDeparturesSidebar() {
-        // Find all stops inside current map bounds
         const bounds = map.getBounds();
-        const visibleStops = allStops.filter(stop =>
-            stop.stopLat >= bounds.getSouth() &&
-            stop.stopLat <= bounds.getNorth() &&
-            stop.stopLon >= bounds.getWest() &&
-            stop.stopLon <= bounds.getEast()
-        );
+        const url = `/api/stops/departures-in-bounds?minLat=${bounds.getSouth()}&maxLat=${bounds.getNorth()}&minLon=${bounds.getWest()}&maxLon=${bounds.getEast()}`;
 
-        // Aggregate all next arrivals for each visible stop
-        let promises = visibleStops.map(stop =>
-            fetch(`/api/stops/${stop.stopId}/routesToday`)
-                .then(res => res.json())
-                .then(busRoutes => busRoutes.map(route => ({
-                    stopName: stop.stopName,
-                    stopId: stop.stopId,
-                    routeId: route.routeId,
-                    routeShortName: route.routeShortName,
-                    routeLongName: route.routeLongName,
-                    arrivalTime: route.arrivalTime
-                })))
-        );
-
-        Promise.all(promises).then(stopsArrivals => {
-            // Flatten and process all arrivals
-            let allArrivals = stopsArrivals.flat().map(item => {
-                // Parse arrival time as today
-                const now = new Date();
-                let [hh, mm, ss] = item.arrivalTime.split(":").map(Number);
-                let arrDate = new Date(now);
-                arrDate.setHours(hh, mm, ss || 0, 0);
-                if (arrDate < now) arrDate.setDate(arrDate.getDate() + 1); // After midnight
-                item.diffSec = Math.floor((arrDate - now)/1000);
-                item.arrDate = arrDate;
-                return item;
-            }).filter(item => item.diffSec >= 0);
-
-            // Sort by soonest arrival
-            allArrivals = allArrivals.sort((a, b) => a.diffSec - b.diffSec);
-
-            // Limit to top 15
-            const N = 15;
-            let html = `<ul class="departures-list">`;
-            if (allArrivals.length === 0) {
-                html += "<li>No buses departing soon here</li>";
-            } else {
-                allArrivals.slice(0, N).forEach(item => {
-                    html += `<li>
-                        <span class="route-name">${item.routeShortName || item.routeId}</span>
-                        (${item.routeLongName || ''})<br>
-                        <span class="stop-name">Departs ${item.stopName}</span> in
-                        <span class="countdown">${formatCountdown(item.diffSec)}</span>
-                        (<span class="arrival-time">${item.arrivalTime}</span>)
-                    </li>`;
-                });
-            }
-            html += "</ul>";
-            document.getElementById("departures-list").innerHTML = html;
-        });
+        fetch(url)
+            .then(res => res.json())
+            .then(allArrivals => {
+                let html = `<ul class="departures-list">`;
+                if (allArrivals.length === 0) {
+                    html += "<li>No buses departing soon here</li>";
+                } else {
+                    allArrivals.forEach(item => {
+                        html += `<li>
+                            <span class="route-name">${item.routeShortName || item.routeId}</span>
+                            (${item.routeLongName || ''})<br>
+                            <span class="stop-name">Departs ${item.stopName}</span> in
+                            <span class="countdown" data-arrivetime="${new Date(Date.now() + item.diffSec * 1000).toISOString()}">${formatCountdown(item.diffSec)}</span>
+                            (<span class="arrival-time">${item.arrivalTime}</span>)
+                        </li>`;
+                    });
+                }
+                html += "</ul>";
+                document.getElementById("departures-list").innerHTML = html;
+            })
+            .catch(err => {
+                console.error("Error loading departures sidebar:", err);
+                document.getElementById("departures-list").innerHTML = "<li>Error loading departures</li>";
+            });
     }
 
-    // Debounce marker update on viewport change
+    function handleMapUpdate() {
+        loadVisibleStops();
+        if (showBuses) {
+            loadBusPositions();
+        }
+        updateNextDeparturesSidebar();
+    }
+
     let debounce;
+    let isUpdating = false;
+
     map.on('moveend', function() {
         clearTimeout(debounce);
         debounce = setTimeout(() => {
+            if (!isUpdating) {
+                isUpdating = true;
+                handleMapUpdateAsync();
+            }
+        }, 200); // Reduced from 300ms to 200ms for faster response
+    });
+
+    async function handleMapUpdateAsync() {
+        try {
             loadVisibleStops();
             if (showBuses) {
                 loadBusPositions();
             }
             updateNextDeparturesSidebar();
-        }, 500);
-    });
+        } finally {
+            // Reset flag after a short delay to ensure all requests complete
+            setTimeout(() => {
+                isUpdating = false;
+            }, 100);
+        }
+    }
 
-    // INITIAL RENDER
-    loadVisibleStops();
-    loadBusPositions();
+    function refreshDeparturesSidebar() {
+        updateNextDeparturesSidebar();
+    }
 
-    // Initialize departures sidebar after a short delay
-    setTimeout(updateNextDeparturesSidebar, 2000);
-
-    // Refresh buses every minute
+    handleMapUpdate();
     setInterval(loadBusPositions, 60000);
-    setInterval(updateNextDeparturesSidebar, 60000);
+    setInterval(refreshDeparturesSidebar, 60000);
 </script>
 </body>
 </html>
